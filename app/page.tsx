@@ -107,7 +107,7 @@ export default function DashboardIBGE() {
                 />
                 <Bar dataKey="valor" fill="#0369a1" radius={[8, 8, 0, 0]} barSize={60}>
                   {dados.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#0369a1' : '#0ea5e9'} />
+                    <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#0369a1' : '#32a041'} />
                   ))}
                 </Bar>
               </BarChart>
