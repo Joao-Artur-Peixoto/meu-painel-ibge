@@ -1,131 +1,116 @@
-'use client'; 
-
+'use client';
 import { useEffect, useState } from 'react';
-// Importamos os componentes necessários da biblioteca Recharts
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  Tooltip, 
-  ResponsiveContainer, 
-  CartesianGrid, 
-  Cell 
-} from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 
-export default function DashboardIBGE() {
+// Mapeamento de níveis para a API do IBGE
+const NIVEIS = [
+  { label: 'Regiões', value: 'N2', desc: 'all' },
+  { label: 'Estados (UFs)', value: 'N3', desc: 'all' },
+];
+
+export default function DashboardDinamico() {
   const [dados, setDados] = useState<any[]>([]);
+  const [nivel, setNivel] = useState(NIVEIS[0]); // Começa em Regiões
   const [carregando, setCarregando] = useState(true);
-  const [origemDados, setOrigemDados] = useState('Buscando...');
 
   useEffect(() => {
     async function carregarDados() {
+      setCarregando(true);
       try {
-        // Tenta buscar os dados reais da API do IBGE
-        const res = await fetch('https://servicodados.ibge.gov.br/api/v3/agregados/6579/periodos/2022/variaveis/9324?localidades=N2[all]');
-        
-        if (!res.ok) throw new Error("Falha na rede");
-        
+        // A URL agora usa o 'nivel.value' dinamicamente
+        const url = `https://servicodados.ibge.gov.br/api/v3/agregados/6579/periodos/2022/variaveis/9324?localidades=${nivel.value}[${nivel.desc}]`;
+        const res = await fetch(url);
         const json = await res.json();
-        const series = json[0]?.resultados[0]?.series;
+        
+        const series = json[0]?.resultados[0]?.series || [];
+        const formatado = series.map((item: any) => ({
+          name: item.localidade.nome,
+          valor: parseInt(item.serie['2022'], 10)
+        }))
+        // Ordena do maior para o menor para o gráfico ficar mais bonito
+        .sort((a: any, b: any) => b.valor - a.valor);
 
-        if (series && series.length > 0) {
-          // Se a API funcionou, formata os dados
-          const formatado = series.map((item: any) => ({
-            name: item.localidade.nome,
-            valor: parseInt(item.serie['2022'], 10)
-          }));
-          setDados(formatado);
-          setOrigemDados('Dados em tempo real via API IBGE');
-        } else {
-          throw new Error("Dados vazios");
-        }
+        setDados(formatado);
       } catch (err) {
-        // SE A API FALHAR: Usa os dados oficiais de backup para o gráfico não ficar branco
-        console.warn("Usando backup devido a erro na API");
-        const backup = [
-          { name: 'Norte', valor: 17349619 },
-          { name: 'Nordeste', valor: 54644582 },
-          { name: 'Sudeste', valor: 84847313 },
-          { name: 'Sul', valor: 29933315 },
-          { name: 'Centro-Oeste', valor: 16287809 }
-        ];
-        setDados(backup);
-        setOrigemDados('Exibindo dados de backup (API offline)');
+        console.error("Erro ao buscar dados:", err);
       } finally {
         setCarregando(false);
       }
     }
-
     carregarDados();
-  }, []);
-
-  if (carregando) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <p className="text-lg font-semibold text-blue-900 animate-pulse">Carregando Panorama...</p>
-      </div>
-    );
-  }
+  }, [nivel]); // Toda vez que o nível mudar, ele busca de novo!
 
   return (
-    <main className="min-h-screen bg-gray-100 p-4 md:p-10 font-sans">
-      <div className="max-w-5xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-200">
+    <main className="min-h-screen bg-slate-50 p-4 md:p-10 font-sans text-slate-900">
+      <div className="max-w-6xl mx-auto bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
         
-        {/* Cabeçalho */}
-        <div className="bg-blue-900 p-8 text-white">
-          <h1 className="text-2xl md:text-4xl font-light italic">
-            Panorama <span className="font-bold not-italic">Censo 2022</span>
-          </h1>
-          <p className="text-blue-200 text-sm mt-2 opacity-80 uppercase tracking-widest">
-            População Residente por Grande Região
-          </p>
+        {/* Header com Filtros */}
+        <div className="p-8 border-b border-slate-100 bg-white">
+          <h1 className="text-2xl font-black text-blue-950 mb-6">Explorador Censo 2022</h1>
+          
+          <div className="flex flex-wrap gap-4 items-center">
+            <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">Nível de Detalhe:</span>
+            <div className="flex bg-slate-100 p-1 rounded-xl">
+              {NIVEIS.map((n) => (
+                <button
+                  key={n.value}
+                  onClick={() => setNivel(n)}
+                  className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${
+                    nivel.value === n.value 
+                    ? 'bg-blue-600 text-white shadow-lg' 
+                    : 'text-slate-500 hover:text-blue-600'
+                  }`}
+                >
+                  {n.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <div className="p-6 md:p-10">
-          {/* Container do Gráfico - Importante ter altura definida */}
-          <div className="h-[450px] w-full bg-white">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dados} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{fill: '#475569', fontSize: 13}}
-                  dy={10}
-                />
-                <YAxis 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tickFormatter={(value) => `${(value / 1000000).toFixed(0)}M`}
-                  tick={{fill: '#475569', fontSize: 13}}
-                />
-                <Tooltip 
-                  cursor={{fill: '#f8fafc'}}
-                  contentStyle={{ borderRadius: '15px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
-                />
-                <Bar dataKey="valor" fill="#0369a1" radius={[8, 8, 0, 0]} barSize={60}>
-                  {dados.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#0369a1' : '#32a041'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Rodapé Informativo */}
-          <div className="mt-10 pt-6 border-t border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
-            <div className="text-center md:text-left">
-              <p className="text-xs text-gray-400 font-bold uppercase tracking-tighter">Status do Sistema</p>
-              <p className="text-sm text-gray-600">{origemDados}</p>
+        {/* Área do Gráfico */}
+        <div className="p-8">
+          {carregando ? (
+            <div className="h-[500px] flex items-center justify-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
             </div>
-            <p className="text-[11px] text-gray-400 italic">
-              Fonte: SIDRA - Sistema IBGE de Recuperação Automática
-            </p>
-          </div>
+          ) : (
+            <div className="h-[500px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dados} layout={nivel.value === 'N3' ? 'vertical' : 'horizontal'}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={nivel.value !== 'N3'} vertical={nivel.value === 'N3'} stroke="#f1f5f9" />
+                  
+                  {/* Inverte eixos se for UF para caber todos os nomes na lateral */}
+                  {nivel.value === 'N3' ? (
+                    <>
+                      <XAxis type="number" hide />
+                      <YAxis dataKey="name" type="category" width={120} tick={{fontSize: 10}} axisLine={false} tickLine={false} />
+                    </>
+                  ) : (
+                    <>
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                      <YAxis tickFormatter={(v) => `${v/1000000}M`} axisLine={false} tickLine={false} />
+                    </>
+                  )}
+                  
+                  <Tooltip 
+                    cursor={{fill: '#f8fafc'}}
+                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
+                  />
+                  <Bar dataKey="valor" radius={[0, 10, 10, 0]}>
+                    {dados.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={index < 3 ? '#1e3a8a' : '#3b82f6'} />
+                    )}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       </div>
+      <p className="text-center mt-6 text-slate-400 text-xs italic">
+        Dica: Clique em "Estados" para ver o ranking completo das UFs.
+      </p>
     </main>
   );
 }
