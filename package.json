@@ -12,6 +12,7 @@
     "d3-scale": "^4.0.2",
     "d3-scale-chromatic": "^3.1.0",
     "next": "15.5.12",
+    "next-auth": "^4.24.13",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-simple-maps": "^3.0.0",
