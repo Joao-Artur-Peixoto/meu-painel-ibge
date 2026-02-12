@@ -1,132 +1,153 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts';
 
-const REGIOES = ['Brasil', 'Norte', 'Nordeste', 'Sudeste', 'Sul', 'Centro-Oeste'];
+import { useEffect, useState } from 'react';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  Tooltip, 
+  ResponsiveContainer, 
+  CartesianGrid, 
+  Cell 
+} from 'recharts';
 
-export default function DashboardFinal() {
-  const [todosOsDados, setTodosOsDados] = useState<any[]>([]);
-  const [regiaoAtiva, setRegiaoAtiva] = useState('Brasil');
+// Definimos uma interface para o TypeScript não reclamar do formato dos dados
+interface DadosEstado {
+  name: string;
+  valor: number;
+}
+
+export default function DashboardANP() {
+  const [dadosVendasPorUF, setDadosVendasPorUF] = useState<DadosEstado[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
-    async function carregarDados() {
+    async function carregarDadosANP() {
       try {
         setCarregando(true);
-        // Chamada para a API de Estados (UF)
-        const res = await fetch('https://servicodados.ibge.gov.br/api/v3/agregados/6579/periodos/2022/variaveis/9324?localidades=N3[all]');
-        
-        if (!res.ok) throw new Error("Falha ao conectar com o IBGE");
-        
-        const json = await res.json();
-        const series = json[0]?.resultados[0]?.series || [];
-        
-        if (series.length === 0) throw new Error("A API retornou uma lista vazia");
+        setErro(null);
 
-        const formatado = series.map((item: any) => {
-          // Garante que o valor seja um número puro e remove nulos
-          const valorRaw = item.serie['2022'];
-          const valorLimpo = valorRaw ? parseInt(valorRaw.toString().replace(/\D/g, ''), 10) : 0;
-          
-          return {
-            name: item.localidade.nome,
-            valor: valorLimpo,
-            regiao: identificarRegiao(item.localidade.nome)
-          };
-        }).sort((a: any, b: any) => b.valor - a.valor);
+        const urlCsv = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRCa0e2T5iCog18x2-7k_1m5FTE1r40fzTJXSC6adnMji8jV6GYyRHs3pVJL8D7zsEQvq6utBXQ7UH1/pub?gid=1320084496&single=true&output=csv';
+        
+        const res = await fetch(urlCsv);
+        if (!res.ok) throw new Error("Falha ao carregar o CSV da planilha.");
+        
+        const textoCsv = await res.text();
+        const linhas = textoCsv.split('\n');
+        
+        // Limpamos o cabeçalho para evitar espaços em branco ou caracteres especiais
+        const cabecalho = linhas[0].split(',').map(item => item.trim().toUpperCase());
+        
+        const idxEstado = cabecalho.indexOf('ESTADO');
+        const idxVendas = cabecalho.indexOf('VENDAS');
+        
+        if (idxEstado === -1 || idxVendas === -1) {
+            throw new Error("Colunas 'ESTADO' ou 'VENDAS' não encontradas.");
+        }
 
-        setTodosOsDados(formatado);
+        const vendasPorUF: Record<string, number> = {};
+
+        for (let i = 1; i < linhas.length; i++) {
+          const colunas = linhas[i].split(',');
+          if (colunas.length < 2) continue; // Pula linhas vazias
+
+          const estado = colunas[idxEstado]?.trim();
+          // Tratamento para números: remove aspas, troca vírgula por ponto
+          const vendasRaw = colunas[idxVendas]?.replace(/"/g, '').replace(',', '.') || '0';
+          const vendas = parseFloat(vendasRaw);
+
+          if (estado && estado !== 'Região' && !isNaN(vendas)) {
+            vendasPorUF[estado] = (vendasPorUF[estado] || 0) + vendas;
+          }
+        }
+
+        const formatado: DadosEstado[] = Object.keys(vendasPorUF).map(estado => ({
+          name: estado,
+          valor: vendasPorUF[estado]
+        })).sort((a, b) => b.valor - a.valor);
+
+        setDadosVendasPorUF(formatado);
+
       } catch (err: any) {
         setErro(err.message);
-        // Backup se a API falhar totalmente
-        setTodosOsDados([
-          { name: 'São Paulo', valor: 44420459, regiao: 'Sudeste' },
-          { name: 'Minas Gerais', valor: 20538718, regiao: 'Sudeste' },
-          { name: 'Rio de Janeiro', valor: 16054524, regiao: 'Sudeste' }
-        ]);
+        console.error("Erro ANP:", err);
       } finally {
         setCarregando(false);
       }
     }
-    carregarDados();
+    carregarDadosANP();
   }, []);
-
-  const dadosExibidos = useMemo(() => {
-    if (regiaoAtiva === 'Brasil') return todosOsDados.slice(0, 10);
-    return todosOsDados.filter(d => d.regiao === regiaoAtiva);
-  }, [todosOsDados, regiaoAtiva]);
-
-  function identificarRegiao(estado: string) {
-    const norte = ['Acre', 'Amapá', 'Amazonas', 'Pará', 'Rondônia', 'Roraima', 'Tocantins'];
-    const nordeste = ['Alagoas', 'Bahia', 'Ceará', 'Maranhão', 'Paraíba', 'Pernambuco', 'Piauí', 'Rio Grande do Norte', 'Sergipe'];
-    const sudeste = ['Espírito Santo', 'Minas Gerais', 'Rio de Janeiro', 'São Paulo'];
-    const sul = ['Paraná', 'Rio Grande do Sul', 'Santa Catarina'];
-    if (norte.includes(estado)) return 'Norte';
-    if (nordeste.includes(estado)) return 'Nordeste';
-    if (sudeste.includes(estado)) return 'Sudeste';
-    if (sul.includes(estado)) return 'Sul';
-    return 'Centro-Oeste';
-  }
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 md:p-10 font-sans text-slate-900">
-      <div className="max-w-5xl mx-auto bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+      <div className="max-w-6xl mx-auto bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
         
         <div className="p-8 border-b border-slate-100">
-          <h1 className="text-2xl font-black text-blue-900 mb-6">População Censo 2022</h1>
-          
-          <div className="flex flex-wrap gap-2">
-            {REGIOES.map(r => (
-              <button
-                key={r}
-                onClick={() => setRegiaoAtiva(r)}
-                className={`px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${
-                  regiaoAtiva === r ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                }`}
-              >
-                {r}
-              </button>
-            ))}
-          </div>
+          <h1 className="text-2xl font-black text-blue-900 mb-2">Vendas Totais de Combustíveis por UF</h1>
+          <p className="text-sm text-slate-500 uppercase tracking-wider">Volume acumulado em metros cúbicos (m³)</p>
         </div>
 
         <div className="p-8">
           {carregando ? (
-            <div className="h-[400px] flex items-center justify-center animate-pulse text-blue-600 font-bold">
-              CONECTANDO AO IBGE...
+            <div className="h-[600px] flex items-center justify-center animate-pulse text-blue-600 font-bold uppercase tracking-tighter">
+              Processando base de dados ANP...
+            </div>
+          ) : erro ? (
+            <div className="h-[600px] flex items-center justify-center text-red-500 font-medium">
+              ⚠️ Erro: {erro}
             </div>
           ) : (
-            <div className="h-[450px] w-full">
+            <div className="h-[800px] w-full"> 
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={dadosExibidos} margin={{ top: 20, right: 30, left: 40, bottom: 60 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <BarChart 
+                  data={dadosVendasPorUF} 
+                  layout="vertical" 
+                  margin={{ top: 5, right: 50, left: 40, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                   <XAxis 
-                    dataKey="name" 
-                    tick={{fontSize: 11, fill: '#64748b'}} 
-                    angle={-45} 
-                    textAnchor="end" 
-                    interval={0}
+                    type="number" 
+                    tickFormatter={(v) => `${(v/1000000).toFixed(0)}M`} 
+                    tick={{fontSize: 10, fill: '#94a3b8'}}
+                    axisLine={false}
                   />
                   <YAxis 
-                    tickFormatter={(v) => `${(v/1000000).toFixed(1)}M`}
-                    tick={{fontSize: 11, fill: '#64748b'}}
+                    dataKey="name" 
+                    type="category" 
+                    width={120} 
+                    tick={{fontSize: 11, fill: '#475569', fontWeight: 600}} 
+                    axisLine={false}
+                    tickLine={false}
                   />
                   <Tooltip 
                     cursor={{fill: '#f8fafc'}}
-                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
+                    formatter={(value: number) => [
+                      `${value.toLocaleString('pt-BR', {maximumFractionDigits: 0})} m³`, 
+                      'Volume Total'
+                    ]}
+                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'}}
                   />
-                  {/* AQUI É ONDE A MÁGICA ACONTECE: O minPointSize garante que a barra apareça */}
-                  <Bar dataKey="valor" fill="#2563eb" radius={[6, 6, 0, 0]} minPointSize={5}>
-                    {dadosExibidos.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={index === 0 ? '#1e3a8a' : '#3b82f6'} />
+                  <Bar dataKey="valor" radius={[0, 4, 4, 0]} barSize={20}>
+                    {dadosVendasPorUF.map((entry, index) => (
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={index < 3 ? '#1e3a8a' : '#3b82f6'} 
+                        fillOpacity={1 - (index * 0.02)} // Efeito visual de gradiente no ranking
+                      />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
           )}
-          {erro && <p className="text-center text-red-400 text-xs mt-4">Aviso: {erro}. Exibindo dados de segurança.</p>}
+        </div>
+        
+        <div className="bg-slate-50 p-4 text-center">
+            <p className="text-[10px] text-slate-400 font-medium italic">
+                Fonte: Agência Nacional do Petróleo, Gás Natural e Biocombustíveis (ANP)
+            </p>
         </div>
       </div>
     </main>
