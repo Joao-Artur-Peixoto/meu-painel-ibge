@@ -127,7 +127,7 @@ export default function DashboardVendas() {
           <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
             <div className="h-[500px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart layout="vertical" data={estatisticasEstado.slice(0, 12)} margin={{ left: 10, right: 30 }}>
+                <BarChart layout="vertical" data={estatisticasEstado} margin={{ left: 10, right: 30 }}>
                   <XAxis type="number" hide />
                   <YAxis dataKey="id" type="category" width={40} tick={{ fontSize: 12, fontWeight: 700 }} />
                   <Tooltip 
