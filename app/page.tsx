@@ -7,9 +7,10 @@ import {
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps';
 import { scaleQuantile } from 'd3-scale';
 
-// URL do GeoJSON dos estados brasileiros
+// URL do GeoJSON dos estados brasileiros (Fonte estável)
 const geoUrl = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson";
 
+// 1. Interface de Dados (Tipagem)
 interface DadoVenda {
   DATA: string;
   UF: string;
@@ -24,30 +25,38 @@ export default function DashboardVendas() {
   const [anoSelecionado, setAnoSelecionado] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // 2. Carregar Dados do JSON
   useEffect(() => {
     fetch('/dados_vendas.json')
       .then((res) => res.json())
       .then((data: DadoVenda[]) => {
         setDados(data);
         if (data.length > 0) {
+          // Define o ano mais recente como padrão
           const anos = data.map(d => new Date(d.DATA).getFullYear());
           setAnoSelecionado(Math.max(...anos));
         }
         setLoading(false);
+      })
+      .catch(err => {
+        console.error("Erro ao carregar dados:", err);
+        setLoading(false);
       });
   }, []);
 
+  // 3. Filtros e Agrupamentos
   const listaAnos = useMemo(() => {
     const anosUnicos = [...new Set(dados.map(d => new Date(d.DATA).getFullYear()))];
     return anosUnicos.sort((a, b) => b - a).slice(0, 10);
   }, [dados]);
 
-  // Processamento unificado para Mapa e Gráfico
   const estatisticasEstado = useMemo(() => {
     if (!anoSelecionado) return [];
+    
     const filtrados = dados.filter(d => new Date(d.DATA).getFullYear() === anoSelecionado);
+    
     const agrupado = filtrados.reduce((acc: { [key: string]: number }, curr) => {
-      const uf = curr.UF; // Usamos a sigla para o mapa
+      const uf = curr.UF;
       acc[uf] = (acc[uf] || 0) + curr.VENDAS;
       return acc;
     }, {});
@@ -59,58 +68,72 @@ export default function DashboardVendas() {
     })).sort((a, b) => b.vendas - a.vendas);
   }, [dados, anoSelecionado]);
 
-  // Escala de cores para o mapa (Tons de Azul)
+  // 4. Escala de Cores (Azuis do Tailwind)
   const colorScale = scaleQuantile<string>()
     .domain(estatisticasEstado.map(d => d.vendas))
     .range(["#dbeafe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e3a8a"]);
 
-  if (loading) return <div className="p-10 text-center">Carregando Dashboard...</div>;
+  if (loading) return <div className="p-10 text-center font-bold">Carregando Painel ANP...</div>;
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-900">
+    <main className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-900 font-sans">
       <div className="max-w-[1400px] mx-auto">
         
-        <header className="mb-6">
-          <h1 className="text-3xl font-black tracking-tight">📊 Painel ANP: Distribuição de Combustíveis</h1>
-          <p className="text-slate-500 font-medium">Análise volumétrica anual por Unidade Federativa</p>
+        {/* Cabeçalho */}
+        <header className="mb-8">
+          <h1 className="text-4xl font-black tracking-tight text-slate-800">📊 Painel de Vendas ANP</h1>
+          <p className="text-slate-500 text-lg font-medium">Distribuição por Estado e Volume (m³)</p>
         </header>
 
-        {/* Seletor de Anos */}
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 mb-6">
+        {/* Filtro de Anos */}
+        <section className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 mb-8">
+          <h2 className="text-xs font-bold text-slate-400 uppercase mb-4 tracking-widest">Selecione o Ano de Análise</h2>
           <div className="flex flex-wrap gap-2">
             {listaAnos.map(ano => (
               <button
                 key={ano}
                 onClick={() => setAnoSelecionado(ano)}
-                className={`px-5 py-2 rounded-xl text-sm font-bold transition-all ${
-                  anoSelecionado === ano ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                className={`px-6 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${
+                  anoSelecionado === ano 
+                    ? 'bg-blue-600 text-white shadow-lg scale-105' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
                 {ano}
               </button>
             ))}
           </div>
-        </div>
+        </section>
 
-        {/* Grid Lado a Lado */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Layout Grid: Mapa e Gráfico */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           
-          {/* Coluna 1: Mapa Choropleth */}
+          {/* Cartão do Mapa */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-            <h3 className="text-lg font-bold mb-4 text-slate-700">Distribuição Geográfica ({anoSelecionado})</h3>
-            <div className="h-[500px] flex items-center justify-center">
-              <ComposableMap projection="geoMercator" projectionConfig={{ scale: 900, center: [-54, -15] }} style={{ width: "100%", height: "100%" }}>
+            <div className="mb-6">
+              <h3 className="text-xl font-bold text-slate-800">Visão Geográfica</h3>
+              <p className="text-sm text-slate-500">Intensidade de vendas por UF em {anoSelecionado}</p>
+            </div>
+            
+            <div className="h-[550px] w-full flex items-center justify-center bg-slate-50 rounded-2xl overflow-hidden border border-slate-100">
+              <ComposableMap 
+                projection="geoMercator" 
+                projectionConfig={{ scale: 850, center: [-54, -15] }}
+                style={{ width: "100%", height: "100%" }}
+              >
                 <Geographies geography={geoUrl}>
                   {({ geographies }) =>
                     geographies.map((geo) => {
-                      const cur = estatisticasEstado.find(s => s.id === geo.properties.sigla);
+                      // O GeoJSON usa properties.sigla para o código do estado
+                      const sigla = geo.properties.sigla;
+                      const data = estatisticasEstado.find(s => s.id === sigla);
                       return (
                         <Geography
                           key={geo.rsmKey}
                           geography={geo}
-                          fill={cur ? colorScale(cur.vendas) : "#F5F5F5"}
-                          stroke="#FFFFFF"
-                          strokeWidth={0.5}
+                          fill={data ? colorScale(data.vendas) : "#f1f5f9"}
+                          stroke="#ffffff"
+                          strokeWidth={0.8}
                           style={{
                             default: { outline: "none" },
                             hover: { fill: "#facc15", outline: "none", cursor: "pointer" },
@@ -125,22 +148,43 @@ export default function DashboardVendas() {
             </div>
           </div>
 
-          {/* Coluna 2: Gráfico de Barras */}
+          {/* Cartão do Gráfico de Barras */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-            <h3 className="text-lg font-bold mb-4 text-slate-700">Ranking por Volume (m³)</h3>
-            <div className="h-[500px]">
+            <div className="mb-6">
+              <h3 className="text-xl font-bold text-slate-800">Ranking de Volume</h3>
+              <p className="text-sm text-slate-500">Top estados por metros cúbicos vendidos</p>
+            </div>
+
+            <div className="h-[550px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart layout="vertical" data={estatisticasEstado.slice(0, 15)} margin={{ left: 30 }}>
+                <BarChart 
+                  layout="vertical" 
+                  data={estatisticasEstado.slice(0, 15)} 
+                  margin={{ left: 20, right: 20 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                   <XAxis type="number" hide />
-                  <YAxis dataKey="id" type="category" width={40} tick={{ fontSize: 12, fontWeight: 'bold' }} />
+                  <YAxis 
+                    dataKey="id" 
+                    type="category" 
+                    width={40} 
+                    tick={{ fontSize: 12, fontWeight: 700, fill: '#64748b' }} 
+                  />
                   <Tooltip 
                     cursor={{ fill: '#f8fafc' }}
-                    formatter={(value: any) => [new Intl.NumberFormat('pt-BR').format(value) + " m³", "Vendas"]}
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                    formatter={(value: any) => [
+                      new Intl.NumberFormat('pt-BR').format(value) + " m³", 
+                      "Volume Total"
+                    ]}
                   />
-                  <Bar dataKey="vendas" radius={[0, 4, 4, 0]}>
+                  <Bar dataKey="vendas" radius={[0, 6, 6, 0]}>
                     {estatisticasEstado.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={colorScale(entry.vendas)} />
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={colorScale(entry.vendas)} 
+                        className="transition-all duration-300 hover:opacity-80"
+                      />
                     ))}
                   </Bar>
                 </BarChart>
@@ -149,6 +193,11 @@ export default function DashboardVendas() {
           </div>
 
         </div>
+
+        {/* Rodapé Informativo */}
+        <footer className="mt-10 text-center text-slate-400 text-sm pb-10">
+          Fonte dos dados: ANP (Agência Nacional do Petróleo) | Malhas Geográficas: IBGE
+        </footer>
       </div>
     </main>
   );
