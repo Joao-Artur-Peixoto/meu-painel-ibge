@@ -12,92 +12,146 @@ import {
   Cell
 } from 'recharts';
 
-export default function DashboardVendas() {
-  const [dados, setDados] = useState([]);
-  const [anoSelecionado, setAnoSelecionado] = useState(null);
+// 1. Definição do Tipo de Dado (Interface) para evitar erros de compilação
+interface DadoVenda {
+  DATA: string;
+  UF: string;
+  'UNIDADE DA FEDERAÇÃO': string;
+  PRODUTO: string;
+  SEGMENTO: string;
+  VENDAS: number;
+}
 
-  // 1. Carregar os dados do arquivo JSON local
+export default function DashboardVendas() {
+  const [dados, setDados] = useState<DadoVenda[]>([]);
+  const [anoSelecionado, setAnoSelecionado] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // 2. Carregar dados do arquivo JSON na pasta /public
   useEffect(() => {
     fetch('/dados_vendas.json')
       .then((res) => res.json())
-      .then((data) => {
+      .then((data: DadoVenda[]) => {
         setDados(data);
-        // Define o ano mais recente automaticamente ao carregar
-        const anosDisponiveis = [...new Set(data.map(d => new Date(d.DATA).getFullYear()))];
-        setAnoSelecionado(Math.max(...anosDisponiveis));
+        
+        // Encontrar o ano mais recente disponível nos dados
+        if (data.length > 0) {
+          const anos = data.map(d => new Date(d.DATA).getFullYear());
+          setAnoSelecionado(Math.max(...anos));
+        }
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Erro ao carregar JSON:", err);
+        setLoading(false);
       });
   }, []);
 
-  // 2. Processar os últimos 10 anos para o filtro
-  const filtrosAnos = useMemo(() => {
-    const todosAnos = [...new Set(dados.map(d => new Date(d.DATA).getFullYear()))];
-    return todosAnos.sort((a, b) => b - a).slice(0, 10);
+  // 3. Gerar lista dos últimos 10 anos para o filtro
+  const listaAnos = useMemo(() => {
+    const anosUnicos = [...new Set(dados.map(d => new Date(d.DATA).getFullYear()))];
+    return anosUnicos.sort((a, b) => b - a).slice(0, 10);
   }, [dados]);
 
-  // 3. Filtrar e Agrupar dados para o gráfico (Soma por UF no ano selecionado)
-  const dadosGrafico = useMemo(() => {
+  // 4. Filtrar e Agrupar dados para o gráfico de barras
+  const dadosFormatadosParaGrafico = useMemo(() => {
+    if (!anoSelecionado) return [];
+
+    // Filtrar pelo ano clicado
     const filtrados = dados.filter(d => new Date(d.DATA).getFullYear() === anoSelecionado);
     
-    const agrupado = filtrados.reduce((acc, curr) => {
-      const uf = curr['UNIDADE DA FEDERAÇÃO'];
-      acc[uf] = (acc[uf] || 0) + curr.VENDAS;
+    // Somar vendas por Estado
+    const somaPorEstado = filtrados.reduce((acc: { [key: string]: number }, curr) => {
+      const estado = curr['UNIDADE DA FEDERAÇÃO'];
+      acc[estado] = (acc[estado] || 0) + curr.VENDAS;
       return acc;
     }, {});
 
-    return Object.keys(agrupado)
-      .map(uf => ({ uf, vendas: agrupado[uf] }))
-      .sort((a, b) => b.vendas - a.vendas); // Ordenar do maior para o menor
+    // Converter para o formato que o Recharts entende e ordenar
+    return Object.keys(somaPorEstado)
+      .map(estado => ({
+        nome: estado,
+        vendas: somaPorEstado[estado]
+      }))
+      .sort((a, b) => b.vendas - a.vendas);
   }, [dados, anoSelecionado]);
 
+  if (loading) return <div className="p-10 text-center">Carregando dados da ANP...</div>;
+
   return (
-    <div className="p-8 bg-gray-50 min-h-screen">
-      <h1 className="text-2xl font-bold mb-6">Vendas por Unidade da Federação</h1>
+    <main className="min-h-screen bg-gray-100 p-4 md:p-10">
+      <div className="max-w-6xl mx-auto">
+        <header className="mb-8">
+          <h1 className="text-3xl font-extrabold text-gray-800">📊 Vendas de Combustíveis</h1>
+          <p className="text-gray-600">Análise por Unidade da Federação (m³)</p>
+        </header>
 
-      {/* Filtro de Anos */}
-      <div className="flex gap-2 mb-8 flex-wrap">
-        {filtrosAnos.map(ano => (
-          <button
-            key={ano}
-            onClick={() => setAnoSelecionado(ano)}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              anoSelecionado === ano 
-              ? 'bg-blue-600 text-white' 
-              : 'bg-white text-gray-600 hover:bg-gray-100 border'
-            }`}
-          >
-            {ano}
-          </button>
-        ))}
-      </div>
+        {/* Filtro de Anos */}
+        <div className="bg-white p-4 rounded-xl shadow-sm mb-6 border border-gray-200">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3 tracking-wider">Selecionar Ano</h2>
+          <div className="flex flex-wrap gap-2">
+            {listaAnos.map(ano => (
+              <button
+                key={ano}
+                onClick={() => setAnoSelecionado(ano)}
+                className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${
+                  anoSelecionado === ano
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'bg-gray-50 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {ano}
+              </button>
+            ))}
+          </div>
+        </div>
 
-      {/* Container do Gráfico */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border h-[600px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            layout="vertical"
-            data={dadosGrafico}
-            margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-            <XAxis type="number" hide />
-            <YAxis 
-              dataKey="uf" 
-              type="category" 
-              width={150} 
-              tick={{ fontSize: 12 }}
-            />
-            <Tooltip 
-              formatter={(value) => new Intl.NumberFormat('pt-BR').format(value) + ' m³'}
-              cursor={{ fill: '#f3f4f6' }}
-            />
-            <Bar dataKey="vendas" fill="#3b82f6" radius={[0, 4, 4, 0]}>
-              {dadosGrafico.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={index < 3 ? '#1d4ed8' : '#3b82f6'} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        {/* Área do Gráfico */}
+        <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+          <div className="mb-4">
+            <h3 className="text-lg font-bold text-gray-700">Total de Vendas em {anoSelecionado}</h3>
+          </div>
+          
+          <div className="h-[700px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                layout="vertical"
+                data={dadosFormatadosParaGrafico}
+                margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f0f0f0" />
+                <XAxis type="number" hide />
+                <YAxis 
+                  dataKey="nome" 
+                  type="category" 
+                  width={150} 
+                  tick={{ fontSize: 11, fill: '#4b5563' }}
+                />
+                <Tooltip 
+                  cursor={{ fill: '#f9fafb' }}
+                  formatter={(value: number) => [
+                    new Intl.NumberFormat('pt-BR').format(value) + " m³", 
+                    "Total de Vendas"
+                  ]}
+                />
+                <Bar 
+                  dataKey="vendas" 
+                  fill="#3b82f6" 
+                  radius={[0, 4, 4, 0]}
+                  barSize={20}
+                >
+                  {dadosFormatadosParaGrafico.map((entry, index) => (
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={index < 3 ? '#1e3a8a' : '#3b82f6'} // Destaque para o Top 3
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
       </div>
-    </div>
+    </main>
   );
 }
