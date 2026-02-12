@@ -12,7 +12,17 @@ import { useSession, signIn } from "next-auth/react";
 
 const geoUrl = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson";
 
-// Coordenadas centrais aproximadas de cada estado para as labels (Share %)
+// Configurações de Zoom e Foco por Região
+const mapConfigs: Record<string, { center: [number, number]; scale: number }> = {
+  "Brasil Inteiro": { center: [-55, -15], scale: 950 },
+  "Norte": { center: [-63, -4], scale: 1900 },
+  "Nordeste": { center: [-41, -11], scale: 2400 },
+  "Centro-Oeste": { center: [-56, -16], scale: 2200 },
+  "Sudeste": { center: [-46, -21], scale: 3000 },
+  "Sul": { center: [-52, -27], scale: 3000 },
+};
+
+// Coordenadas para os textos de Share no Mapa
 const centrosEstados: Record<string, [number, number]> = {
   'AC': [-70.81, -9.02], 'AL': [-36.78, -9.57], 'AP': [-51.77, 1.41], 'AM': [-64.63, -3.41],
   'BA': [-41.71, -12.96], 'CE': [-39.53, -5.20], 'DF': [-47.88, -15.77], 'ES': [-40.30, -19.19],
@@ -57,9 +67,9 @@ export default function DashboardVendas() {
   }, []);
 
   const formatarUnidade = (valor: number) => {
-    if (valor >= 1_000_000) return `${(valor / 1_000_000).toFixed(1)} M m³`;
-    if (valor >= 1_000) return `${(valor / 1_000).toFixed(1)} k m³`;
-    return `${valor.toLocaleString('pt-BR')} m³`;
+    if (valor >= 1_000_000) return `${(valor / 1_000_000).toFixed(1)}M`;
+    if (valor >= 1_000) return `${(valor / 1_000).toFixed(1)}k`;
+    return `${valor.toLocaleString('pt-BR')}`;
   };
 
   const listaAnos = useMemo(() => {
@@ -107,7 +117,7 @@ export default function DashboardVendas() {
       .range(["#dbeafe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e3a8a"]);
   }, [estatisticasEstado]);
 
-  if (status === "loading") return <div className="min-h-screen flex items-center justify-center font-black animate-pulse text-blue-900">VALIDANDO ACESSO...</div>;
+  if (status === "loading") return <div className="min-h-screen flex items-center justify-center font-black animate-pulse text-blue-900">VERIFICANDO ACESSO...</div>;
 
   if (!session) {
     return (
@@ -115,30 +125,30 @@ export default function DashboardVendas() {
         <div className="text-center p-12 bg-slate-800 rounded-[3rem] border border-slate-700 shadow-2xl">
           <h2 className="text-blue-400 text-2xl font-black mb-6 italic">ANP | ACESSO RESTRITO</h2>
           <button onClick={() => signIn('google')} className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-2xl font-black transition-all">
-            ENTRAR COM CONTA GOOGLE
+            LOGAR NO SISTEMA
           </button>
         </div>
       </div>
     );
   }
 
-  if (loading) return <div className="p-10 text-center font-black animate-pulse text-blue-900">Sincronizando Dados...</div>;
+  if (loading) return <div className="p-10 text-center font-black animate-pulse text-blue-900">CARREGANDO...</div>;
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-900 font-sans">
-      <div className="max-w-[1600px] mx-auto">
+      <div className="max-w-[1700px] mx-auto">
         
-        {/* CABEÇALHO */}
+        {/* FILTROS */}
         <header className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 mb-8">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
             <div>
               <h1 className="text-3xl font-black tracking-tighter text-blue-900 italic">ANP|INSIGHTS</h1>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Usuário: {session.user?.email}</p>
+              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">SESSÃO: {session.user?.name}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {listaAnos.map(ano => (
                 <button key={ano} onClick={() => setAnoSelecionado(ano)}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${anoSelecionado === ano ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}>
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${anoSelecionado === ano ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-50 text-slate-400'}`}>
                   {ano}
                 </button>
               ))}
@@ -147,18 +157,18 @@ export default function DashboardVendas() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-slate-100">
             <div>
-              <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block tracking-widest">Região</label>
+              <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block tracking-widest italic">Região Geográfica</label>
               <div className="flex flex-wrap gap-2">
                 {['Brasil Inteiro', ...listaRegioes].map(r => (
                   <button key={r} onClick={() => setRegiaoSelecionada(r)}
-                    className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border transition-all ${regiaoSelecionada === r ? 'bg-blue-50 border-blue-600 text-blue-700' : 'bg-white border-slate-200 text-slate-500'}`}>
+                    className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${regiaoSelecionada === r ? 'bg-blue-50 border-blue-600 text-blue-700' : 'bg-white border-slate-200 text-slate-500'}`}>
                     {r}
                   </button>
                 ))}
               </div>
             </div>
             <div>
-              <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block tracking-widest">Produtos</label>
+              <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block tracking-widest italic">Seleção de Produto</label>
               <div className="flex flex-wrap gap-2">
                 {listaProdutos.map(p => (
                   <button key={p} onClick={() => toggleProduto(p)}
@@ -171,65 +181,70 @@ export default function DashboardVendas() {
           </div>
         </header>
 
-        {/* LAYOUT FLEXÍVEL PARA EVITAR SOBREPOSIÇÃO */}
+        {/* DASHBOARD BODY */}
         <div className="flex flex-col xl:flex-row gap-8 items-start">
           
-          {/* LADO ESQUERDO: KPI + MAPA COM LABELS FIXAS */}
-          <div className="w-full xl:w-[500px] shrink-0 sticky top-8 space-y-6">
+          {/* LADO ESQUERDO: MAPA */}
+          <div className="w-full xl:w-[550px] shrink-0 sticky top-8 space-y-6">
             <div className="bg-blue-600 p-8 rounded-[2.5rem] shadow-xl text-white relative overflow-hidden">
-              <h4 className="text-blue-100 text-[10px] font-black uppercase tracking-widest mb-1 italic">Volume Consolidado</h4>
-              <div className="text-5xl font-black tracking-tighter relative z-10">{formatarUnidade(totalFiltro)}</div>
-              <div className="absolute -right-4 -bottom-4 text-white/10 text-8xl font-black italic">ANP</div>
+              <h4 className="text-blue-100 text-[10px] font-black uppercase tracking-widest mb-1 italic">Venda Total Selecionada</h4>
+              <div className="text-5xl font-black tracking-tighter relative z-10">{totalFiltro.toLocaleString('pt-BR')} <span className="text-xl">m³</span></div>
             </div>
 
             <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Distribuição Geográfica (%)</h3>
-                {tooltipContent && (
-                  <div className="bg-slate-900 text-white px-3 py-1 rounded-full text-[10px] font-bold animate-pulse">
-                    {tooltipContent}
-                  </div>
-                )}
-              </div>
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 italic">Foco por UF (% Share)</h3>
               
               <div className="aspect-square bg-slate-50 rounded-3xl overflow-hidden border border-slate-100 relative">
-                <ComposableMap projection="geoMercator" projectionConfig={{ scale: 1000, center: [-54, -15] }}>
+                <ComposableMap 
+                  projection="geoMercator" 
+                  projectionConfig={{ 
+                    scale: mapConfigs[regiaoSelecionada]?.scale || 950, 
+                    center: mapConfigs[regiaoSelecionada]?.center || [-55, -15] 
+                  }}
+                >
                   <Geographies geography={geoUrl}>
                     {({ geographies }: { geographies: any[] }) =>
                       geographies.map((geo) => {
                         const data = estatisticasEstado.find(s => s.id === geo.properties.sigla);
+                        const pertenceRegiao = regiaoSelecionada === 'Brasil Inteiro' || 
+                                               dados.find(d => d.UF === geo.properties.sigla)?.['Região Geográfica'] === regiaoSelecionada;
+
                         return (
                           <Geography
                             key={geo.rsmKey}
                             geography={geo}
-                            fill={data ? colorScale(data.vendas) : "#f1f5f9"}
-                            stroke="#ffffff"
-                            strokeWidth={0.5}
-                            onMouseEnter={() => { if (data) setTooltipContent(`${data.nomeCompleto}: ${data.share.toFixed(1)}%`); }}
+                            fill={pertenceRegiao ? (data ? colorScale(data.vendas) : "#f1f5f9") : "#f8fafc"}
+                            stroke={pertenceRegiao ? "#ffffff" : "#f1f5f9"}
+                            strokeWidth={0.8}
+                            onMouseEnter={() => { if (data && pertenceRegiao) setTooltipContent(`${data.nomeCompleto}: ${data.share.toFixed(1)}%`); }}
                             onMouseLeave={() => setTooltipContent("")}
-                            style={{ default: { outline: "none" }, hover: { fill: "#facc15", cursor: "pointer" } }}
+                            style={{ default: { outline: "none" }, hover: { fill: pertenceRegiao ? "#facc15" : "#f8fafc" } }}
                           />
                         );
                       })
                     }
                   </Geographies>
-                  {/* Labels Fixas de Share sobre o mapa */}
+
                   {estatisticasEstado.map((estado) => {
                     const coords = centrosEstados[estado.id];
-                    if (!coords || estado.share < 0.1) return null; // Não mostra labels em estados minúsculos/sem dados
+                    const pertenceRegiao = regiaoSelecionada === 'Brasil Inteiro' || 
+                                           dados.find(d => d.UF === estado.id)?.['Região Geográfica'] === regiaoSelecionada;
+
+                    if (!coords || estado.share < 0.1 || !pertenceRegiao) return null;
+
                     return (
                       <Marker key={estado.id} coordinates={coords}>
                         <text
                           textAnchor="middle"
                           y={2}
                           style={{ 
-                            fontSize: "8px", 
+                            fontSize: regiaoSelecionada === "Brasil Inteiro" ? "13px" : "18px",
                             fontWeight: 900, 
-                            fill: estado.share > 15 ? "#fff" : "#1e3a8a", // Cor contrastante conforme fundo
+                            fill: estado.share > 15 ? "#fff" : "#1e3a8a",
                             pointerEvents: "none",
                             paintOrder: "stroke",
-                            stroke: estado.share > 15 ? "none" : "#ffffff80",
-                            strokeWidth: "2px"
+                            stroke: "#ffffff",
+                            strokeWidth: "3px"
                           }}
                         >
                           {estado.share.toFixed(1)}%
@@ -242,35 +257,37 @@ export default function DashboardVendas() {
             </div>
           </div>
 
-          {/* LADO DIREITO: RANKING */}
+          {/* LADO DIREITO: RANKING COM FONTES GRANDES */}
           <div className="flex-1 min-w-[350px] bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
-            <h3 className="text-[10px] font-black text-slate-400 mb-8 uppercase tracking-widest">Ranking por Performance de UF</h3>
-            <div className="overflow-y-auto max-h-[800px] pr-2 custom-scrollbar">
-              <div style={{ height: `${Math.max(500, estatisticasEstado.length * 52)}px`, width: '100%' }}>
+            <h3 className="text-[10px] font-black text-slate-400 mb-8 uppercase tracking-widest italic">Ranking Detalhado por Performance</h3>
+            
+            <div className="overflow-y-auto max-h-[850px] pr-2 custom-scrollbar">
+              <div style={{ height: `${Math.max(500, estatisticasEstado.length * 55)}px`, width: '100%' }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart layout="vertical" data={estatisticasEstado} margin={{ left: 10, right: 110 }}>
+                  <BarChart layout="vertical" data={estatisticasEstado} margin={{ left: 10, right: 120 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
                     <XAxis type="number" hide />
                     <YAxis 
                       dataKey="nomeCompleto" 
                       type="category" 
-                      width={160} // Aumentado para nomes longos
-                      tick={{ fontSize: 10, fontWeight: 800, fill: '#1e3a8a', textAnchor: 'start' }} 
-                      dx={-155} 
+                      width={180} 
+                      tick={{ fontSize: 13, fontWeight: 900, fill: '#1e3a8a', textAnchor: 'start' }} 
+                      dx={-175} 
                       axisLine={false}
                       tickLine={false}
                     />
                     <Tooltip 
                       cursor={{ fill: '#f8fafc' }}
                       contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}
-                      formatter={(value: number, name: string, props: any) => [`${formatarUnidade(value)} (${props.payload.share.toFixed(2)}%)`, "Volume"]}
+                      formatter={(v: number, n: any, p: any) => [`${v.toLocaleString('pt-BR')} m³ (${p.payload.share.toFixed(2)}%)`, "Volume"]}
                     />
-                    <Bar dataKey="vendas" radius={[0, 12, 12, 0]} barSize={28}>
+                    <Bar dataKey="vendas" radius={[0, 15, 15, 0]} barSize={32}>
                       <LabelList 
                         dataKey="vendas" 
                         position="right" 
-                        formatter={(v: number) => formatarUnidade(v)}
-                        style={{ fill: '#64748b', fontSize: '11px', fontWeight: 'bold' }} 
+                        formatter={(v: number) => `${formatarUnidade(v)} m³`}
+                        style={{ fill: '#1e293b', fontSize: '13px', fontWeight: '900' }} 
+                        offset={12}
                       />
                       {estatisticasEstado.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={colorScale(entry.vendas)} />
