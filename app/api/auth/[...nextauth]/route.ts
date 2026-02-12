@@ -11,7 +11,7 @@ const handler = NextAuth({
   callbacks: {
     async signIn({ user }) {
       // SUBSTITUA pelo seu e-mail que você usa no Google
-      const aprovados = ["joao.peixoto.artur@gmail.com"]; 
+      const aprovados = ["joao.peixoto.artur@gmail.com","julianacpereira@gmail.com"]; 
       return aprovados.includes(user.email || "");
     },
   },
