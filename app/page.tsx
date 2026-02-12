@@ -1,155 +1,103 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  Tooltip, 
-  ResponsiveContainer, 
-  CartesianGrid, 
-  Cell 
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell
 } from 'recharts';
 
-// Definimos uma interface para o TypeScript não reclamar do formato dos dados
-interface DadosEstado {
-  name: string;
-  valor: number;
-}
+export default function DashboardVendas() {
+  const [dados, setDados] = useState([]);
+  const [anoSelecionado, setAnoSelecionado] = useState(null);
 
-export default function DashboardANP() {
-  const [dadosVendasPorUF, setDadosVendasPorUF] = useState<DadosEstado[]>([]);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState<string | null>(null);
-
+  // 1. Carregar os dados do arquivo JSON local
   useEffect(() => {
-    async function carregarDadosANP() {
-      try {
-        setCarregando(true);
-        setErro(null);
-
-        const urlCsv = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRCa0e2T5iCog18x2-7k_1m5FTE1r40fzTJXSC6adnMji8jV6GYyRHs3pVJL8D7zsEQvq6utBXQ7UH1/pub?gid=1320084496&single=true&output=csv';
-        
-        const res = await fetch(urlCsv);
-        if (!res.ok) throw new Error("Falha ao carregar o CSV da planilha.");
-        
-        const textoCsv = await res.text();
-        const linhas = textoCsv.split('\n');
-        
-        // Limpamos o cabeçalho para evitar espaços em branco ou caracteres especiais
-        const cabecalho = linhas[0].split(',').map(item => item.trim().toUpperCase());
-        
-        const idxEstado = cabecalho.indexOf('ESTADO');
-        const idxVendas = cabecalho.indexOf('VENDAS');
-        
-        if (idxEstado === -1 || idxVendas === -1) {
-            throw new Error("Colunas 'ESTADO' ou 'VENDAS' não encontradas.");
-        }
-
-        const vendasPorUF: Record<string, number> = {};
-
-        for (let i = 1; i < linhas.length; i++) {
-          const colunas = linhas[i].split(',');
-          if (colunas.length < 2) continue; // Pula linhas vazias
-
-          const estado = colunas[idxEstado]?.trim();
-          // Tratamento para números: remove aspas, troca vírgula por ponto
-          const vendasRaw = colunas[idxVendas]?.replace(/"/g, '').replace(',', '.') || '0';
-          const vendas = parseFloat(vendasRaw);
-
-          if (estado && estado !== 'Região' && !isNaN(vendas)) {
-            vendasPorUF[estado] = (vendasPorUF[estado] || 0) + vendas;
-          }
-        }
-
-        const formatado: DadosEstado[] = Object.keys(vendasPorUF).map(estado => ({
-          name: estado,
-          valor: vendasPorUF[estado]
-        })).sort((a, b) => b.valor - a.valor);
-
-        setDadosVendasPorUF(formatado);
-
-      } catch (err: any) {
-        setErro(err.message);
-        console.error("Erro ANP:", err);
-      } finally {
-        setCarregando(false);
-      }
-    }
-    carregarDadosANP();
+    fetch('/dados_vendas.json')
+      .then((res) => res.json())
+      .then((data) => {
+        setDados(data);
+        // Define o ano mais recente automaticamente ao carregar
+        const anosDisponiveis = [...new Set(data.map(d => new Date(d.DATA).getFullYear()))];
+        setAnoSelecionado(Math.max(...anosDisponiveis));
+      });
   }, []);
 
-  return (
-    <main className="min-h-screen bg-slate-50 p-4 md:p-10 font-sans text-slate-900">
-      <div className="max-w-6xl mx-auto bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
-        
-        <div className="p-8 border-b border-slate-100">
-          <h1 className="text-2xl font-black text-blue-900 mb-2">Vendas Totais de Combustíveis por UF</h1>
-          <p className="text-sm text-slate-500 uppercase tracking-wider">Volume acumulado em metros cúbicos (m³)</p>
-        </div>
+  // 2. Processar os últimos 10 anos para o filtro
+  const filtrosAnos = useMemo(() => {
+    const todosAnos = [...new Set(dados.map(d => new Date(d.DATA).getFullYear()))];
+    return todosAnos.sort((a, b) => b - a).slice(0, 10);
+  }, [dados]);
 
-        <div className="p-8">
-          {carregando ? (
-            <div className="h-[600px] flex items-center justify-center animate-pulse text-blue-600 font-bold uppercase tracking-tighter">
-              Processando base de dados ANP...
-            </div>
-          ) : erro ? (
-            <div className="h-[600px] flex items-center justify-center text-red-500 font-medium">
-              ⚠️ Erro: {erro}
-            </div>
-          ) : (
-            <div className="h-[800px] w-full"> 
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart 
-                  data={dadosVendasPorUF} 
-                  layout="vertical" 
-                  margin={{ top: 5, right: 50, left: 40, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                  <XAxis 
-                    type="number" 
-                    tickFormatter={(v) => `${(v/1000000).toFixed(0)}M`} 
-                    tick={{fontSize: 10, fill: '#94a3b8'}}
-                    axisLine={false}
-                  />
-                  <YAxis 
-                    dataKey="name" 
-                    type="category" 
-                    width={120} 
-                    tick={{fontSize: 11, fill: '#475569', fontWeight: 600}} 
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip 
-                    cursor={{fill: '#f8fafc'}}
-                    formatter={(value: number) => [
-                      `${value.toLocaleString('pt-BR', {maximumFractionDigits: 0})} m³`, 
-                      'Volume Total'
-                    ]}
-                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'}}
-                  />
-                  <Bar dataKey="valor" radius={[0, 4, 4, 0]} barSize={20}>
-                    {dadosVendasPorUF.map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={index < 3 ? '#1e3a8a' : '#3b82f6'} 
-                        fillOpacity={1 - (index * 0.02)} // Efeito visual de gradiente no ranking
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-        
-        <div className="bg-slate-50 p-4 text-center">
-            <p className="text-[10px] text-slate-400 font-medium italic">
-                Fonte: Agência Nacional do Petróleo, Gás Natural e Biocombustíveis (ANP)
-            </p>
-        </div>
+  // 3. Filtrar e Agrupar dados para o gráfico (Soma por UF no ano selecionado)
+  const dadosGrafico = useMemo(() => {
+    const filtrados = dados.filter(d => new Date(d.DATA).getFullYear() === anoSelecionado);
+    
+    const agrupado = filtrados.reduce((acc, curr) => {
+      const uf = curr['UNIDADE DA FEDERAÇÃO'];
+      acc[uf] = (acc[uf] || 0) + curr.VENDAS;
+      return acc;
+    }, {});
+
+    return Object.keys(agrupado)
+      .map(uf => ({ uf, vendas: agrupado[uf] }))
+      .sort((a, b) => b.vendas - a.vendas); // Ordenar do maior para o menor
+  }, [dados, anoSelecionado]);
+
+  return (
+    <div className="p-8 bg-gray-50 min-h-screen">
+      <h1 className="text-2xl font-bold mb-6">Vendas por Unidade da Federação</h1>
+
+      {/* Filtro de Anos */}
+      <div className="flex gap-2 mb-8 flex-wrap">
+        {filtrosAnos.map(ano => (
+          <button
+            key={ano}
+            onClick={() => setAnoSelecionado(ano)}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              anoSelecionado === ano 
+              ? 'bg-blue-600 text-white' 
+              : 'bg-white text-gray-600 hover:bg-gray-100 border'
+            }`}
+          >
+            {ano}
+          </button>
+        ))}
       </div>
-    </main>
+
+      {/* Container do Gráfico */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border h-[600px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            layout="vertical"
+            data={dadosGrafico}
+            margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+            <XAxis type="number" hide />
+            <YAxis 
+              dataKey="uf" 
+              type="category" 
+              width={150} 
+              tick={{ fontSize: 12 }}
+            />
+            <Tooltip 
+              formatter={(value) => new Intl.NumberFormat('pt-BR').format(value) + ' m³'}
+              cursor={{ fill: '#f3f4f6' }}
+            />
+            <Bar dataKey="vendas" fill="#3b82f6" radius={[0, 4, 4, 0]}>
+              {dadosGrafico.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={index < 3 ? '#1d4ed8' : '#3b82f6'} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
   );
 }
