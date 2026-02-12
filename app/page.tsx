@@ -72,9 +72,10 @@ export default function DashboardVendas() {
   }, [dados, anoSelecionado]);
 
   // 4. Escala de Cores (Azuis do Tailwind para intensidade)
-  const colorScale = useMemo(() => {
+ const colorScale = useMemo(() => {
     const volumes = estatisticasEstado.map(d => d.vendas);
-    return scaleQuantile()
+    // Forçamos a escala a entender que o retorno será uma string (hexadecimal da cor)
+    return scaleQuantile<string>()
       .domain(volumes.length > 0 ? volumes : [0, 100])
       .range(["#dbeafe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e3a8a"]);
   }, [estatisticasEstado]);
