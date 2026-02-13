@@ -8,28 +8,29 @@ import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps
 import { scaleQuantize } from "d3-scale";
 import Link from 'next/link';
 
+// URL do GeoJSON e Coordenadas para os Rótulos no Mapa
 const geoUrl = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson";
 
-// Coordenadas aproximadas para os rótulos no mapa
-const offsets: { [key: string]: [number, number] } = {
-  "AC": [0, 0], "AL": [2, 0], "AP": [0, 0], "AM": [0, 0], "BA": [0, 0], "CE": [0, 0],
-  "DF": [0, 5], "ES": [2, 0], "GO": [0, 0], "MA": [0, 0], "MT": [0, 0], "MS": [0, 0],
-  "MG": [0, 0], "PA": [0, 0], "PB": [2, 0], "PR": [0, 0], "PE": [2, 0], "PI": [0, 0],
-  "RJ": [2, 0], "RN": [2, 0], "RS": [0, 0], "RO": [0, 0], "RR": [0, 0], "SC": [0, 0],
-  "SP": [0, 0], "SE": [2, 0], "TO": [0, 0]
+const centroidesUF: { [key: string]: [number, number] } = {
+  "AC": [-70, -9], "AL": [-36.5, -9.5], "AP": [-51, 1.5], "AM": [-64, -4], "BA": [-41, -12],
+  "CE": [-39, -5], "DF": [-47.9, -15.8], "ES": [-40.3, -19], "GO": [-49, -16], "MA": [-45, -5],
+  "MT": [-56, -13], "MS": [-54, -20], "MG": [-44, -18], "PA": [-52, -4], "PB": [-36.5, -7],
+  "PR": [-51, -24.5], "PE": [-37.5, -8.5], "PI": [-42, -7.5], "RJ": [-42.5, -22.5], "RN": [-36.5, -5.5],
+  "RS": [-53, -30], "RO": [-63, -11], "RR": [-61, 2], "SC": [-50, -27], "SP": [-49, -22],
+  "SE": [-37, -10.5], "TO": [-48, -10]
 };
 
-export default function PainelEstrategicoV3() {
+export default function PainelCompletoANP() {
   const [dadosBrutos, setDadosBrutos] = useState<any[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   
-  // Filtros Gráfico 1
+  // --- ESTADOS FILTROS G1 ---
   const [reg1, setReg1] = useState('Brasil Inteiro');
   const [uf1, setUf1] = useState('Todas as UFs');
   const [prod1, setProd1] = useState('Todos os Produtos');
   const [seg1, setSeg1] = useState('Todos os Segmentos');
 
-  // Filtros Estratégicos (2 e 3)
+  // --- ESTADOS FILTROS G2 E G3 ---
   const [prod2, setProd2] = useState('Todos os Produtos');
   const [seg2, setSeg2] = useState('Todos os Segmentos');
 
@@ -40,6 +41,7 @@ export default function PainelEstrategicoV3() {
       .catch(err => setErro(err.message));
   }, []);
 
+  // Formatador 3 Algarismos
   const f3 = (valor: number, unidade = "m³") => {
     if (valor === 0) return `0 ${unidade}`;
     const absV = Math.abs(valor);
@@ -51,11 +53,33 @@ export default function PainelEstrategicoV3() {
     return `${parseFloat(n)}${s} ${unidade}`;
   };
 
-  // Listas de Filtros
-  const listaProds = useMemo(() => ['Todos os Produtos', ...new Set(dadosBrutos.map(d => d.PRODUTO).filter(Boolean))].sort(), [dadosBrutos]);
-  const listaSegs = useMemo(() => ['Todos os Segmentos', ...new Set(dadosBrutos.map(d => d.SEGMENTO).filter(Boolean))].sort(), [dadosBrutos]);
+  // --- LOGICA LISTAS FILTROS (CASCATA) ---
+  const listaReg1 = useMemo(() => ['Brasil Inteiro', ...new Set(dadosBrutos.map(d => d['Região Geográfica']).filter(Boolean))].sort(), [dadosBrutos]);
+  const listaUF1 = useMemo(() => {
+    let f = reg1 === 'Brasil Inteiro' ? dadosBrutos : dadosBrutos.filter(d => d['Região Geográfica'] === reg1);
+    return ['Todas as UFs', ...new Set(f.map(d => d['UNIDADE DA FEDERAÇÃO']).filter(Boolean))].sort();
+  }, [dadosBrutos, reg1]);
+  const listaProdGlobal = useMemo(() => ['Todos os Produtos', ...new Set(dadosBrutos.map(d => d.PRODUTO).filter(Boolean))].sort(), [dadosBrutos]);
+  const listaSegGlobal = useMemo(() => ['Todos os Segmentos', ...new Set(dadosBrutos.map(d => d.SEGMENTO).filter(Boolean))].sort(), [dadosBrutos]);
 
-  // Lógica Gráficos 2 e 3 (Calculando Volume Incremental baseado em 2025)
+  // --- DADOS G1 ---
+  const dadosG1 = useMemo(() => {
+    let f = dadosBrutos;
+    if (reg1 !== 'Brasil Inteiro') f = f.filter(d => d['Região Geográfica'] === reg1);
+    if (uf1 !== 'Todas as UFs') f = f.filter(d => d['UNIDADE DA FEDERAÇÃO'] === uf1);
+    if (prod1 !== 'Todos os Produtos') f = f.filter(d => d.PRODUTO === prod1);
+    if (seg1 !== 'Todos os Segmentos') f = f.filter(d => d.SEGMENTO === seg1);
+
+    const m = f.reduce((acc: any, curr) => {
+      const ano = curr.DATA.substring(0, 4);
+      if (!acc[ano]) acc[ano] = { ano, total: 0, tipo: curr.TIPO };
+      acc[ano].total += parseFloat(curr.VENDAS || curr.PREVISAO || 0);
+      return acc;
+    }, {});
+    return Object.values(m).sort((a: any, b: any) => a.ano - b.ano);
+  }, [dadosBrutos, reg1, uf1, prod1, seg1]);
+
+  // --- DADOS G2 E G3 (CAGR + VOL INCREMENTAL) ---
   const dadosEstrategicos = useMemo(() => {
     let f = dadosBrutos;
     if (prod2 !== 'Todos os Produtos') f = f.filter(d => d.PRODUTO === prod2);
@@ -73,9 +97,12 @@ export default function PainelEstrategicoV3() {
     }, {});
 
     return Object.values(ufsMap).map((d: any) => {
-      const cagr = d.v2025 > 0 ? (Math.pow(d.v2028 / d.v2025, 1/3) - 1) : 0;
-      const volIncremental = d.v2025 * cagr; // Volume m³ do crescimento anual médio
-      return { ...d, cagr: cagr * 100, volIncremental };
+      const taxaCagr = d.v2025 > 0 ? (Math.pow(d.v2028 / d.v2025, 1/3) - 1) : 0;
+      return { 
+        ...d, 
+        cagr: taxaCagr * 100, 
+        volIncremental: d.v2025 * taxaCagr 
+      };
     }).sort((a, b) => b.volIncremental - a.volIncremental);
   }, [dadosBrutos, prod2, seg2]);
 
@@ -83,42 +110,57 @@ export default function PainelEstrategicoV3() {
     .domain([-5, 5])
     .range(["#ef4444", "#f87171", "#475569", "#4ade80", "#22c55e"]);
 
+  if (erro) return <div className="p-20 text-red-500 bg-slate-950 min-h-screen">Erro: {erro}</div>;
+
   return (
     <main className="min-h-screen bg-slate-950 p-8 text-white font-sans">
-      <nav className="mb-8">
-        <Link href="/" className="text-blue-500 font-bold text-xs uppercase tracking-widest hover:text-blue-400 transition-colors">
+      <nav className="mb-6">
+        <Link href="/" className="text-blue-500 font-bold text-[10px] uppercase tracking-[0.3em] hover:text-blue-400 italic">
           ← Voltar ao Dashboard Principal
         </Link>
       </nav>
 
       <header className="mb-10">
-        <h1 className="text-4xl font-black italic uppercase tracking-tighter">Análise de <span className="text-blue-500">Expansão Geográfica</span></h1>
+        <h1 className="text-4xl font-black italic uppercase tracking-tighter">Market <span className="text-blue-500">Intelligence</span> Platform</h1>
       </header>
 
-      {/* --- GRÁFICO 1 (VOLUME TEMPORAL - JÁ ESTRUTURADO) --- */}
-      {/* ... Filtros e BarChart do Gráfico 1 aqui ... */}
+      {/* --- GRÁFICO 1: EVOLUÇÃO TEMPORAL --- */}
+      <section className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 mb-12 shadow-2xl">
+        <h2 className="text-sm font-black uppercase mb-6 text-blue-500 italic tracking-widest">1. Volume Consolidado Anual</h2>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+           <select value={reg1} onChange={e => setReg1(e.target.value)} className="bg-slate-800 p-3 rounded-xl text-xs font-bold outline-none">{listaReg1.map(r => <option key={r} value={r}>{r}</option>)}</select>
+           <select value={uf1} onChange={e => setUf1(e.target.value)} className="bg-slate-800 p-3 rounded-xl text-xs font-bold outline-none">{listaUF1.map(u => <option key={u} value={u}>{u}</option>)}</select>
+           <select value={prod1} onChange={e => setProd1(e.target.value)} className="bg-slate-800 p-3 rounded-xl text-xs font-bold outline-none">{listaProdGlobal.map(p => <option key={p} value={p}>{p}</option>)}</select>
+           <select value={seg1} onChange={e => setSeg1(e.target.value)} className="bg-slate-800 p-3 rounded-xl text-xs font-bold outline-none">{listaSegGlobal.map(s => <option key={s} value={s}>{s}</option>)}</select>
+        </div>
+        <div className="h-[400px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={dadosG1}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+              <XAxis dataKey="ano" stroke="#475569" fontSize={11} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={v => f3(v, "")} stroke="#475569" fontSize={11} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px'}} formatter={(v:any) => f3(v)} />
+              <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                {dadosG1.map((entry: any, i) => <Cell key={i} fill={entry.tipo === 'Histórico' ? '#3b82f6' : '#eab308'} />)}
+                <LabelList dataKey="total" position="top" formatter={v => f3(v, "")} fill="#94a3b8" fontSize={10} fontWeight="bold" offset={10} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
 
-      {/* --- SEÇÃO ESTRATÉGICA --- */}
-      <div className="bg-slate-900/50 p-6 rounded-3xl border border-slate-800 mb-8 flex gap-6 items-center">
-        <div className="flex flex-col">
-          <label className="text-[10px] font-black text-slate-500 uppercase mb-1">Produto (Estratégico)</label>
-          <select value={prod2} onChange={e => setProd2(e.target.value)} className="bg-slate-800 border-none rounded-xl p-2 text-xs font-bold outline-none">
-            {listaProds.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-        </div>
-        <div className="flex flex-col">
-          <label className="text-[10px] font-black text-slate-500 uppercase mb-1">Segmento (Estratégico)</label>
-          <select value={seg2} onChange={e => setSeg2(e.target.value)} className="bg-slate-800 border-none rounded-xl p-2 text-xs font-bold outline-none">
-            {listaSegs.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
+      {/* --- SEÇÃO ESTRATÉGICA (MAPA + VOLUME INCREMENTAL) --- */}
+      <div className="flex flex-col md:flex-row gap-6 items-center bg-slate-900/40 p-6 rounded-[2rem] border border-slate-800 mb-8 backdrop-blur-md">
+        <span className="text-[10px] font-black uppercase text-slate-500 italic tracking-[0.2em]">Filtros Estratégicos (Mapa e Ranking):</span>
+        <select value={prod2} onChange={e => setProd2(e.target.value)} className="bg-slate-800 p-2.5 rounded-xl text-xs font-bold outline-none border border-slate-700">{listaProdGlobal.map(p => <option key={p} value={p}>{p}</option>)}</select>
+        <select value={seg2} onChange={e => setSeg2(e.target.value)} className="bg-slate-800 p-2.5 rounded-xl text-xs font-bold outline-none border border-slate-700">{listaSegGlobal.map(s => <option key={s} value={s}>{s}</option>)}</select>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* GRÁFICO 2: MAPA COM RÓTULOS CAGR */}
-        <div className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 h-[700px]">
-          <h2 className="text-xs font-black uppercase mb-6 text-blue-500 italic">2. Mapa de Calor: CAGR % em cada UF</h2>
-          <div className="h-[90%] w-full">
+        {/* GRÁFICO 2: MAPA DE CALOR CAGR */}
+        <div className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 h-[650px] relative">
+          <h2 className="text-xs font-black uppercase mb-4 text-blue-500 italic tracking-widest">2. Mapa de Crescimento CAGR % Anual (25-28)</h2>
+          <ResponsiveContainer width="100%" height="90%">
             <ComposableMap projection="geoMercator" projectionConfig={{ scale: 950, center: [-54, -15] }}>
               <Geographies geography={geoUrl}>
                 {({ geographies }) => geographies.map((geo) => {
@@ -131,41 +173,47 @@ export default function PainelEstrategicoV3() {
                       fill={d ? colorScale(d.cagr) : "#1e293b"}
                       stroke="#0f172a"
                       strokeWidth={0.5}
+                      style={{ hover: { fill: "#3b82f6", outline: "none" } }}
                     />
                   );
                 })}
               </Geographies>
-              {/* Rótulos de CAGR sobre as UFs */}
-              {dadosEstrategicos.map((d) => {
-                // Necessário um mapeamento de centroides se o geoJSON não for suficiente
-                return null; // Aqui você usaria o componente <Marker> para as siglas + %
-              })}
+              {/* Rótulos de Sigla e CAGR sobre o Mapa */}
+              {dadosEstrategicos.map((d) => (
+                centroidesUF[d.sigla] && (
+                  <Marker key={d.sigla} coordinates={centroidesUF[d.sigla]}>
+                    <text textAnchor="middle" y={-5} style={{ fontSize: "8px", fontWeight: "900", fill: "#fff", pointerEvents: "none" }}>{d.sigla}</text>
+                    <text textAnchor="middle" y={5} style={{ fontSize: "7px", fontWeight: "bold", fill: "#000", pointerEvents: "none" }}>{d.cagr.toFixed(1)}%</text>
+                  </Marker>
+                )
+              ))}
             </ComposableMap>
-          </div>
+          </ResponsiveContainer>
         </div>
 
-        {/* GRÁFICO 3: VOLUME INCREMENTAL MÉDIO (m³/ano) */}
-        <div className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 h-[700px]">
-          <div className="mb-6">
-            <h2 className="text-xs font-black uppercase text-blue-500 italic">3. Crescimento Volumétrico Médio Anual</h2>
-            <p className="text-[10px] text-slate-500 uppercase mt-1">Estimativa de m³ adicionais/ano baseados no CAGR x Volume 2025</p>
-          </div>
+        {/* GRÁFICO 3: VOLUME INCREMENTAL MÉDIO */}
+        <div className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 h-[650px]">
+          <h2 className="text-xs font-black uppercase mb-1 text-blue-500 italic tracking-widest">3. Volume Incremental Médio Anual</h2>
+          <p className="text-[9px] text-slate-500 uppercase font-bold mb-6 italic">(Volume 2025 × CAGR %)</p>
           <ResponsiveContainer width="100%" height="90%">
-            <BarChart data={dadosEstrategicos} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
+            <BarChart data={dadosEstrategicos} layout="vertical" margin={{ left: 20, right: 40 }}>
               <XAxis type="number" hide />
-              <YAxis dataKey="uf" type="category" stroke="#475569" fontSize={9} width={110} />
-              <Tooltip formatter={(v: number) => f3(v)} contentStyle={{backgroundColor: '#0f172a'}} />
+              <YAxis dataKey="uf" type="category" stroke="#475569" fontSize={9} width={100} axisLine={false} tickLine={false} />
+              <Tooltip cursor={{fill: '#1e293b'}} contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155'}} formatter={(v:any) => f3(v)} />
               <Bar dataKey="volIncremental" radius={[0, 4, 4, 0]}>
                 {dadosEstrategicos.map((entry, i) => (
-                  <Cell key={i} fill={entry.volIncremental > 0 ? '#3b82f6' : '#ef4444'} />
+                  <Cell key={i} fill={entry.volIncremental > 0 ? '#10b981' : '#ef4444'} />
                 ))}
-                <LabelList dataKey="volIncremental" position="right" formatter={(v:number) => f3(v, "")} fill="#94a3b8" fontSize={9} />
+                <LabelList dataKey="volIncremental" position="right" formatter={v => f3(v, "")} fill="#94a3b8" fontSize={9} fontWeight="bold" offset={10} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
+      
+      <footer className="mt-12 text-center text-[9px] font-black uppercase tracking-[0.4em] text-slate-700 italic">
+        ANP Intelligence System &copy; 2026 - Data-Driven Insights
+      </footer>
     </main>
   );
 }
