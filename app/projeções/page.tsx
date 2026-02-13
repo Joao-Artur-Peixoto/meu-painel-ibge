@@ -1,113 +1,132 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ScatterChart, Scatter, Cell, ZAxis 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList 
 } from 'recharts';
 import Link from 'next/link';
 
-export default function PaginaProjecao() {
-  const [dados, setDados] = useState<any[]>([]);
+export default function PaginaProjecaoBarras() {
+  const [dadosBrutos, setDadosBrutos] = useState<any[]>([]);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
-    // Agora o fetch funcionará pois o arquivo estará na pasta public
     fetch('/previsao_detalhada_anp.json')
       .then(res => {
-        if (!res.ok) throw new Error("Arquivo não encontrado na pasta public/. Verifique a exportação do Jupyter.");
+        if (!res.ok) throw new Error("Arquivo não encontrado.");
         return res.json();
       })
-      .then((data: any[]) => {
-        const processados = data.map(d => ({
-          timestamp: new Date(d.DATA).getTime(),
-          valor: parseFloat(d.VENDAS || d.PREVISAO || 0),
-          tipo: d.TIPO, 
-          dataOriginal: d.DATA
-        })).filter(d => !isNaN(d.timestamp));
-        
-        setDados(processados);
-      })
+      .then((data) => setDadosBrutos(data))
       .catch(err => setErro(err.message));
   }, []);
 
-  if (erro) return (
-    <div className="p-20 text-red-500 font-bold bg-slate-950 min-h-screen">
-      <h2 className="text-2xl mb-4">❌ Erro de Carregamento</h2>
-      <p>{erro}</p>
-    </div>
-  );
+  // Agrupamento de dados por ANO
+  const dadosAgrupados = useMemo(() => {
+    const mapa = dadosBrutos.reduce((acc: any, curr) => {
+      // Extrai o ano da string de data (formato ISO: YYYY-MM-DD)
+      const ano = curr.DATA.substring(0, 4);
+      
+      if (!acc[ano]) {
+        acc[ano] = { 
+          ano, 
+          total: 0, 
+          tipo: curr.TIPO // Assume o tipo do primeiro registro do ano encontrado
+        };
+      }
+      
+      // Soma VENDAS ou PREVISAO
+      const valor = parseFloat(curr.VENDAS || curr.PREVISAO || 0);
+      acc[ano].total += valor;
+      
+      return acc;
+    }, {});
+
+    // Converte o objeto em array e ordena por ano
+    return Object.values(mapa).sort((a: any, b: any) => parseInt(a.ano) - parseInt(b.ano));
+  }, [dadosBrutos]);
+
+  if (erro) return <div className="p-20 text-red-500 bg-slate-950 min-h-screen font-bold">ERRO: {erro}</div>;
 
   return (
     <main className="min-h-screen bg-slate-950 p-8 text-white font-sans">
       <div className="max-w-[1400px] mx-auto">
+        
         <header className="mb-10">
           <Link href="/" className="text-blue-500 font-bold text-[10px] uppercase tracking-widest hover:underline mb-4 block">
             ← Voltar ao Painel
           </Link>
           <h1 className="text-4xl font-black italic uppercase tracking-tighter">
-            Diagnóstico de Dados: <span className="text-blue-500">Pontos de Venda</span>
+            Total de Vendas <span className="text-blue-500">por Ano</span>
           </h1>
+          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-2">
+            Consolidado anual de mercado (Histórico vs Projeção)
+          </p>
         </header>
 
-        <div className="bg-slate-900 p-8 rounded-[2.5rem] border border-slate-800 shadow-2xl h-[600px] relative">
-          {dados.length > 0 ? (
+        <div className="bg-slate-900 p-8 rounded-[2.5rem] border border-slate-800 shadow-2xl h-[600px]">
+          {dadosAgrupados.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <ScatterChart margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+              <BarChart data={dadosAgrupados} margin={{ top: 40, right: 30, left: 20, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                 <XAxis 
-                  dataKey="timestamp" 
-                  type="number" 
-                  domain={['auto', 'auto']}
-                  tickFormatter={(ts) => new Date(ts).toLocaleDateString('pt-BR', { month: '2-digit', year: '2-digit' })}
-                  stroke="#475569" fontSize={11} tickMargin={15}
+                  dataKey="ano" 
+                  stroke="#475569" 
+                  fontSize={12} 
+                  tickMargin={15}
+                  axisLine={false}
+                  tickLine={false}
                 />
                 <YAxis 
-                  dataKey="valor" 
-                  type="number" 
-                  domain={['auto', 'auto']} 
-                  stroke="#475569" fontSize={11}
-                  tickFormatter={(val) => val.toLocaleString('pt-BR')}
+                  stroke="#475569" 
+                  fontSize={12} 
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(val) => (val / 1000000).toFixed(1) + 'M'} 
                 />
-                <ZAxis range={[60, 60]} />
                 <Tooltip 
-                  cursor={{ strokeDasharray: '3 3' }}
+                  cursor={{ fill: '#1e293b', opacity: 0.4 }}
                   contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '12px' }}
-                  labelFormatter={(ts) => `Data: ${new Date(ts).toLocaleDateString('pt-BR')}`}
+                  formatter={(value: number) => [new Intl.NumberFormat('pt-BR').format(Math.floor(value)) + ' m³', 'Total Anual']}
                 />
-                <Scatter data={dados}>
-                  {dados.map((entry, index) => (
+                
+                <Bar dataKey="total" radius={[8, 8, 0, 0]}>
+                  {/* Cores baseadas no Tipo (Histórico vs Projeção) */}
+                  {dadosAgrupados.map((entry: any, index: number) => (
                     <Cell 
                       key={`cell-${index}`} 
-                      // Corrigido para os nomes exatos do seu DataFrame
                       fill={entry.tipo === 'Histórico' ? '#3b82f6' : '#eab308'} 
                     />
                   ))}
-                </Scatter>
-              </ScatterChart>
+                  {/* Valor mostrado acima da barra */}
+                  <LabelList 
+                    dataKey="total" 
+                    position="top" 
+                    fill="#94a3b8" 
+                    fontSize={10} 
+                    formatter={(val: number) => (val / 1000000).toFixed(2) + 'M'}
+                  />
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center space-y-4">
-              <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-              <p className="text-slate-500 font-black uppercase text-xs tracking-[0.3em]">Lendo previsões...</p>
+            <div className="h-full flex items-center justify-center text-slate-700 font-black uppercase text-xs tracking-[0.5em]">
+              Processando registros...
             </div>
           )}
         </div>
 
-        {/* INFO BOX */}
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
-            <p className="text-[10px] text-slate-500 font-black uppercase mb-2">Total de Registros</p>
-            <p className="text-3xl font-bold text-white">{dados.length}</p>
+        {/* LEGENDA E INFO */}
+        <div className="mt-8 flex gap-8">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-blue-500 rounded-sm"></div>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Dados Históricos</span>
           </div>
-          <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 flex flex-col justify-center">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-              <span className="text-xs font-bold uppercase tracking-widest text-slate-300">Histórico</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-              <span className="text-xs font-bold uppercase tracking-widest text-slate-300">Projeção</span>
-            </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-yellow-500 rounded-sm"></div>
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Projeção IA</span>
+          </div>
+          <div className="ml-auto bg-slate-900 px-4 py-2 rounded-lg border border-slate-800">
+             <span className="text-[10px] font-black text-slate-500">REGISTROS PROCESSADOS: {dadosBrutos.length.toLocaleString('pt-BR')}</span>
           </div>
         </div>
       </div>
