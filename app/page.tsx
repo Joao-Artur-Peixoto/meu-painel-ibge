@@ -119,7 +119,6 @@ export default function DashboardVendas() {
     return { estatisticasEstado: lista, totalFiltro: total };
   }, [dados, anoSelecionado, regiaoSelecionada, produtosSelecionados, segmentosSelecionados]);
 
-  // Função para definir a cor de fundo baseada no Share
   const getShareColor = (percent: number) => {
     if (percent === 0) return 'bg-transparent text-slate-300';
     if (percent < 5) return 'bg-blue-50 text-blue-400';
@@ -128,7 +127,7 @@ export default function DashboardVendas() {
     return 'bg-blue-600 text-white';
   };
 
-  if (status === "loading") return <div className="min-h-screen flex items-center justify-center font-black animate-pulse text-blue-900 uppercase">Acessando Dados...</div>;
+  if (status === "loading") return <div className="min-h-screen flex items-center justify-center font-black animate-pulse text-blue-900 uppercase italic">Carregando BI...</div>;
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-900 font-sans">
@@ -141,7 +140,7 @@ export default function DashboardVendas() {
           </div>
 
           <div className="space-y-10">
-            {/* BLOCO 1: ANO E CRESCIMENTO */}
+            {/* FILTRO ANO E CRESCIMENTO */}
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-6">
                 <span className="w-40 text-[10px] font-black uppercase text-slate-400 italic shrink-0">Filtro de Ano</span>
@@ -166,10 +165,8 @@ export default function DashboardVendas() {
 
             <hr className="border-slate-100" />
 
-            {/* BLOCO 2: REGIAO, PRODUTO E SEGMENTO NA MESMA LINHA */}
+            {/* FILTROS DE TRIPLA COLUNA */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-              
-              {/* COLUNA REGIAO */}
               <div className="space-y-1">
                 <div className="flex items-center gap-4">
                   <span className="w-24 text-[9px] font-black uppercase text-slate-400 italic shrink-0">Região</span>
@@ -192,7 +189,6 @@ export default function DashboardVendas() {
                 </div>
               </div>
 
-              {/* COLUNA PRODUTO */}
               <div className="space-y-1">
                 <div className="flex items-center gap-4">
                   <span className="w-24 text-[9px] font-black uppercase text-slate-400 italic shrink-0">Produto</span>
@@ -215,7 +211,6 @@ export default function DashboardVendas() {
                 </div>
               </div>
 
-              {/* COLUNA SEGMENTO */}
               <div className="space-y-1">
                 <div className="flex items-center gap-4">
                   <span className="w-24 text-[9px] font-black uppercase text-slate-400 italic shrink-0">Segmento</span>
@@ -237,17 +232,19 @@ export default function DashboardVendas() {
                   </div>
                 </div>
               </div>
-
             </div>
           </div>
         </header>
 
-        {/* CORPO DO DASHBOARD */}
-        <div className="flex flex-col xl:flex-row gap-8 items-start">
-          <div className="w-full xl:w-[550px] shrink-0 sticky top-8 space-y-6">
+        {/* CORPO INVERTIDO: RANKING À ESQUERDA, MAPA À DIREITA */}
+        <div className="flex flex-col xl:flex-row-reverse gap-8 items-start">
+          
+          {/* LADO DIREITO (STICKY): MAPA E TOTALIZADOR */}
+          <div className="w-full xl:w-[550px] shrink-0 xl:sticky xl:top-8 space-y-6">
             <div className="bg-blue-600 p-8 rounded-[2.5rem] shadow-xl text-white relative overflow-hidden">
-              <h4 className="text-blue-100 text-[10px] font-black uppercase tracking-widest mb-1 italic">Vendas Consolidadas</h4>
+              <h4 className="text-blue-100 text-[10px] font-black uppercase tracking-widest mb-1 italic">Consolidado</h4>
               <div className="text-5xl font-black tracking-tighter relative z-10">{totalFiltro.toLocaleString('pt-BR')} <span className="text-xl opacity-60">m³</span></div>
+              <div className="absolute right-[-10px] bottom-[-10px] text-white/10 text-9xl font-black italic select-none uppercase">ANP</div>
             </div>
 
             <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden aspect-square">
@@ -257,7 +254,11 @@ export default function DashboardVendas() {
                       const sigla = geo.properties.sigla;
                       const data = estatisticasEstado.find(s => s.id === sigla);
                       const pertence = regiaoSelecionada === 'Brasil Inteiro' || dados.find(d => d.UF === sigla)?.['Região Geográfica'] === regiaoSelecionada;
-                      return <Geography key={geo.rsmKey} geography={geo} fill={pertence ? (data ? colorScale(data.vendas) : "#f1f5f9") : "#f8fafc"} stroke="#ffffff" strokeWidth={0.5} style={{ default: { outline: "none" } }} />;
+                      
+                      const volumes = estatisticasEstado.map(d => d.vendas);
+                      const scale = scaleQuantile<string>().domain(volumes.length > 1 ? volumes : [0, 100]).range(["#dbeafe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e3a8a"]);
+                      
+                      return <Geography key={geo.rsmKey} geography={geo} fill={pertence ? (data ? scale(data.vendas) : "#f1f5f9") : "#f8fafc"} stroke="#ffffff" strokeWidth={0.5} style={{ default: { outline: "none" } }} />;
                     })}
                   </Geographies>
                   {estatisticasEstado.map((estado) => {
@@ -273,22 +274,23 @@ export default function DashboardVendas() {
             </div>
           </div>
 
-          <div className="flex-1 min-w-[350px] bg-white p-8 rounded-[2.5rem] border border-slate-200">
-            <h3 className="text-[10px] font-black text-slate-400 mb-8 uppercase tracking-widest italic">Performance por Unidade Federativa</h3>
-            <div className="overflow-y-auto max-h-[850px] pr-2">
-              <div style={{ height: `${Math.max(500, estatisticasEstado.length * 45)}px` }}>
+          {/* LADO ESQUERDO: RANKING DETALHADO */}
+          <div className="flex-1 min-w-[350px] bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+            <h3 className="text-[10px] font-black text-slate-400 mb-8 uppercase tracking-widest italic">Ranking Regional de Vendas</h3>
+            <div className="overflow-y-auto max-h-[1000px] pr-2 custom-scrollbar">
+              <div style={{ height: `${Math.max(600, estatisticasEstado.length * 45)}px` }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart layout="vertical" data={estatisticasEstado} margin={{ left: 10, right: 120 }}>
                     <CartesianGrid horizontal={true} vertical={false} stroke="#f1f5f9" />
                     <XAxis type="number" hide />
                     <YAxis dataKey="nomeCompleto" type="category" width={180} tick={{ fontSize: 13, fontWeight: 900, fill: '#1e3a8a', textAnchor: 'start' }} dx={-175} axisLine={false} tickLine={false} />
-                    <Tooltip cursor={{ fill: '#f8fafc' }} />
-                    <Bar dataKey="vendas" radius={[0, 15, 15, 0]} barSize={32}>
+                    <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '20px', border: 'none' }} />
+                    <Bar dataKey="vendas" radius={[0, 15, 15, 0]} barSize={30}>
                       <LabelList dataKey="vendas" position="right" formatter={(v: number) => `${(v/1e6).toPrecision(3)}M m³`} style={{ fill: '#1e293b', fontSize: '13px', fontWeight: '900' }} offset={12} />
                       {estatisticasEstado.map((entry, index) => {
-                        const volumes = estatisticasEstado.map(d => d.vendas);
-                        const scale = scaleQuantile<string>().domain(volumes.length > 1 ? volumes : [0, 100]).range(["#dbeafe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e3a8a"]);
-                        return <Cell key={index} fill={scale(entry.vendas)} />;
+                         const volumes = estatisticasEstado.map(d => d.vendas);
+                         const scale = scaleQuantile<string>().domain(volumes.length > 1 ? volumes : [0, 100]).range(["#dbeafe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e3a8a"]);
+                         return <Cell key={index} fill={scale(entry.vendas)} />;
                       })}
                     </Bar>
                   </BarChart>
@@ -296,6 +298,7 @@ export default function DashboardVendas() {
               </div>
             </div>
           </div>
+
         </div>
       </div>
     </main>
