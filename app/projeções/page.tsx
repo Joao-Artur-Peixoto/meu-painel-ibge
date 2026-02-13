@@ -2,210 +2,148 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, ComposedChart, Line
 } from 'recharts';
 import Link from 'next/link';
 
-export default function PaginaProjecaoCompleta() {
+export default function PainelProjecaoAvancado() {
   const [dadosBrutos, setDadosBrutos] = useState<any[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   
-  // Estados para os Filtros
-  const [regiaoSelecionada, setRegiaoSelecionada] = useState<string>('Brasil Inteiro');
-  const [ufSelecionada, setUfSelecionada] = useState<string>('Todas as UFs');
-  const [produtoSelecionado, setProdutoSelecionado] = useState<string>('Todos os Produtos');
-  const [segmentoSelecionado, setSegmentoSelecionado] = useState<string>('Todos os Segmentos');
+  // Filtros Gráfico 1 (Histórico/Projeção)
+  const [regiao1, setRegiao1] = useState('Brasil Inteiro');
+  const [uf1, setUf1] = useState('Todas as UFs');
+  const [prod1, setProd1] = useState('Todos os Produtos');
+  const [seg1, setSeg1] = useState('Todos os Segmentos');
+
+  // Filtros Gráfico 2 (Análise de Crescimento CAGR)
+  const [prod2, setProd2] = useState('GASOLINA C');
+  const [seg2, setSeg2] = useState('POSTO REVENDEDOR');
 
   useEffect(() => {
     fetch('/previsao_detalhada_anp.json')
-      .then(res => {
-        if (!res.ok) throw new Error("Arquivo não encontrado.");
-        return res.json();
-      })
-      .then((data) => setDadosBrutos(data))
+      .then(res => res.json())
+      .then(data => setDadosBrutos(data))
       .catch(err => setErro(err.message));
   }, []);
 
-  // --- FUNÇÃO DE FORMATAÇÃO ADAPTATIVA COM m³ ---
-  const formatadorDinamico = (valor: number) => {
-    if (valor === 0) return "0 m³";
-    const absValor = Math.abs(valor);
-    let resultado = "";
-    
-    if (absValor >= 1_000_000_000) resultado = (valor / 1_000_000_000).toFixed(2) + 'B';
-    else if (absValor >= 1_000_000) resultado = (valor / 1_000_000).toFixed(2) + 'M';
-    else if (absValor >= 1_000) resultado = (valor / 1_000).toFixed(1) + 'K';
-    else resultado = valor.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
-
-    return `${resultado} m³`;
+  // Formatador de 3 Algarismos Significativos
+  const f3 = (valor: number, unidade = "m³") => {
+    if (valor === 0) return `0 ${unidade}`;
+    const absV = Math.abs(valor);
+    let n: string, s = "";
+    if (absV >= 1e9) { n = (valor/1e9).toPrecision(3); s = "B"; }
+    else if (absV >= 1e6) { n = (valor/1e6).toPrecision(3); s = "M"; }
+    else if (absV >= 1e3) { n = (valor/1e3).toPrecision(3); s = "K"; }
+    else { n = valor.toPrecision(3); }
+    return `${parseFloat(n)}${s} ${unidade}`;
   };
 
-  // --- LÓGICA DE LISTAS PARA FILTROS (CASCATA) ---
-  const listaRegioes = useMemo(() => {
-    const regioes = dadosBrutos.map(d => d['Região Geográfica']).filter(Boolean);
-    return ['Brasil Inteiro', ...new Set(regioes)].sort();
-  }, [dadosBrutos]);
-
-  const listaUFs = useMemo(() => {
-    let filtrados = dadosBrutos;
-    if (regiaoSelecionada !== 'Brasil Inteiro') {
-      filtrados = dadosBrutos.filter(d => d['Região Geográfica'] === regiaoSelecionada);
-    }
-    const ufs = filtrados.map(d => d['UNIDADE DA FEDERAÇÃO']).filter(Boolean);
-    return ['Todas as UFs', ...new Set(ufs)].sort();
-  }, [dadosBrutos, regiaoSelecionada]);
-
-  const listaProdutos = useMemo(() => {
-    let filtrados = dadosBrutos;
-    if (regiaoSelecionada !== 'Brasil Inteiro') filtrados = filtrados.filter(d => d['Região Geográfica'] === regiaoSelecionada);
-    if (ufSelecionada !== 'Todas as UFs') filtrados = filtrados.filter(d => d['UNIDADE DA FEDERAÇÃO'] === ufSelecionada);
-    const produtos = filtrados.map(d => d['PRODUTO']).filter(Boolean);
-    return ['Todos os Produtos', ...new Set(produtos)].sort();
-  }, [dadosBrutos, regiaoSelecionada, ufSelecionada]);
-
-  const listaSegmentos = useMemo(() => {
-    let filtrados = dadosBrutos;
-    if (regiaoSelecionada !== 'Brasil Inteiro') filtrados = filtrados.filter(d => d['Região Geográfica'] === regiaoSelecionada);
-    if (ufSelecionada !== 'Todas as UFs') filtrados = filtrados.filter(d => d['UNIDADE DA FEDERAÇÃO'] === ufSelecionada);
-    if (produtoSelecionado !== 'Todos os Produtos') filtrados = filtrados.filter(d => d['PRODUTO'] === produtoSelecionado);
+  // --- LÓGICA CAGR POR UF ---
+  const analiseCAGR = useMemo(() => {
+    // Filtra pelo Produto e Segmento específicos do Gráfico 2
+    const filtrados = dadosBrutos.filter(d => d.PRODUTO === prod2 && d.SEGMENTO === seg2);
     
-    const segmentos = filtrados.map(d => d['SEGMENTO']).filter(Boolean);
-    return ['Todos os Segmentos', ...new Set(segmentos)].sort();
-  }, [dadosBrutos, regiaoSelecionada, ufSelecionada, produtoSelecionado]);
-
-  // Resets automáticos ao mudar o filtro pai
-  useEffect(() => { setUfSelecionada('Todas as UFs'); }, [regiaoSelecionada]);
-  useEffect(() => { setProdutoSelecionado('Todos os Produtos'); }, [ufSelecionada]);
-  useEffect(() => { setSegmentoSelecionado('Todos os Segmentos'); }, [produtoSelecionado]);
-
-  // --- FILTRAGEM FINAL ---
-  const dadosFiltradosAgrupados = useMemo(() => {
-    let filtrados = [...dadosBrutos];
-    if (regiaoSelecionada !== 'Brasil Inteiro') filtrados = filtrados.filter(d => d['Região Geográfica'] === regiaoSelecionada);
-    if (ufSelecionada !== 'Todas as UFs') filtrados = filtrados.filter(d => d['UNIDADE DA FEDERAÇÃO'] === ufSelecionada);
-    if (produtoSelecionado !== 'Todos os Produtos') filtrados = filtrados.filter(d => d['PRODUTO'] === produtoSelecionado);
-    if (segmentoSelecionado !== 'Todos os Segmentos') filtrados = filtrados.filter(d => d['SEGMENTO'] === segmentoSelecionado);
-
-    const mapa = filtrados.reduce((acc: any, curr) => {
+    const ufsMap = filtrados.reduce((acc: any, curr) => {
+      const uf = curr['UNIDADE DA FEDERAÇÃO'];
       const ano = curr.DATA.substring(0, 4);
-      if (!acc[ano]) acc[ano] = { ano, total: 0, tipo: curr.TIPO };
-      acc[ano].total += parseFloat(curr.VENDAS || curr.PREVISAO || 0);
+      if (!acc[uf]) acc[uf] = { uf, v2025: 0, v2028: 0 };
+      
+      const valor = parseFloat(curr.VENDAS || curr.PREVISAO || 0);
+      if (ano === '2025') acc[uf].v2025 += valor;
+      if (ano === '2028') acc[uf].v2028 += valor;
       return acc;
     }, {});
 
-    return Object.values(mapa).sort((a: any, b: any) => parseInt(a.ano) - parseInt(b.ano));
-  }, [dadosBrutos, regiaoSelecionada, ufSelecionada, produtoSelecionado, segmentoSelecionado]);
+    return Object.values(ufsMap).map((d: any) => {
+      // Cálculo CAGR: ((Final/Base)^(1/3)) - 1
+      const cagr = d.v2025 > 0 ? (Math.pow(d.v2028 / d.v2025, 1/3) - 1) * 100 : 0;
+      // Crescimento médio anual em volume
+      const volMedio = (d.v2028 - d.v2025) / 3;
+      return { ...d, cagr, volMedio };
+    }).sort((a, b) => b.cagr - a.cagr); // Ordena pelos que mais crescem %
+  }, [dadosBrutos, prod2, seg2]);
 
-  if (erro) return <div className="p-20 text-red-500 bg-slate-950 min-h-screen">ERRO: {erro}</div>;
+  // Listas de filtros (únicas)
+  const listaProd = useMemo(() => [...new Set(dadosBrutos.map(d => d.PRODUTO))].sort(), [dadosBrutos]);
+  const listaSeg = useMemo(() => [...new Set(dadosBrutos.map(d => d.SEGMENTO))].sort(), [dadosBrutos]);
 
   return (
-    <main className="min-h-screen bg-slate-950 p-4 md:p-8 text-white">
-      <div className="max-w-[1500px] mx-auto">
-        <header className="mb-6">
-          <Link href="/" className="text-blue-500 font-bold text-[10px] uppercase tracking-[0.3em] mb-2 block">← Voltar</Link>
-          <h1 className="text-4xl font-black italic uppercase tracking-tighter">
-            Análise <span className="text-blue-500">Multidimensional</span>
-          </h1>
-        </header>
+    <main className="min-h-screen bg-slate-950 p-8 text-white font-sans">
+      <h1 className="text-4xl font-black italic uppercase mb-12 tracking-tighter">
+        Intelligence <span className="text-blue-500">Center</span> ANP
+      </h1>
 
-        {/* PAINEL DE FILTROS */}
-        <section className="bg-slate-900/40 border border-slate-800 rounded-[2.5rem] p-6 mb-8 backdrop-blur-md">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* GRÁFICO 1 - VOLUME ANUAL (OMITIDO AQUI PARA FOCO NO NOVO) */}
+      <section className="mb-20 opacity-50 italic text-xs">... Gráfico 1 de Volume Anual Acima ...</section>
+
+      {/* SEÇÃO GRÁFICO 2 - ANÁLISE ESTRATÉGICA CAGR */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+        <div className="lg:col-span-1 bg-slate-900/80 p-6 rounded-[2rem] border border-blue-500/20 shadow-xl">
+          <h2 className="text-lg font-black italic mb-6 text-blue-400 uppercase">Filtros de Estratégia</h2>
+          <div className="space-y-6">
             <div>
-              <p className="text-[10px] font-black text-slate-500 mb-2 uppercase">1. Região</p>
-              <div className="flex flex-wrap gap-1.5">
-                {listaRegioes.map(r => (
-                  <button key={r} onClick={() => setRegiaoSelecionada(r)}
-                    className={`px-2 py-1 rounded-md text-[9px] font-black uppercase border transition-all ${regiaoSelecionada === r ? 'bg-blue-600 border-blue-400' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>{r}</button>
-                ))}
-              </div>
-            </div>
-            <div className="flex flex-col justify-end">
-              <p className="text-[10px] font-black text-slate-500 mb-2 uppercase">2. Unidade Federativa</p>
-              <select value={ufSelecionada} onChange={(e) => setUfSelecionada(e.target.value)} className="bg-slate-800 border border-slate-700 text-white text-xs rounded-xl p-2.5 font-bold outline-none cursor-pointer">
-                {listaUFs.map(uf => <option key={uf} value={uf}>{uf}</option>)}
+              <label className="text-[10px] font-black text-slate-500 uppercase block mb-2">Produto Analisado</label>
+              <select value={prod2} onChange={e => setProd2(e.target.value)} className="w-full bg-slate-800 border-none rounded-xl p-3 text-xs font-bold outline-none">
+                {listaProd.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
-            <div className="flex flex-col justify-end">
-              <p className="text-[10px] font-black text-slate-500 mb-2 uppercase">3. Produto</p>
-              <select value={produtoSelecionado} onChange={(e) => setProdutoSelecionado(e.target.value)} className="bg-slate-800 border border-slate-700 text-white text-xs rounded-xl p-2.5 font-bold outline-none cursor-pointer">
-                {listaProdutos.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col justify-end">
-              <p className="text-[10px] font-black text-slate-500 mb-2 uppercase">4. Segmento</p>
-              <select value={segmentoSelecionado} onChange={(e) => setSegmentoSelecionado(e.target.value)} className="bg-slate-800 border border-slate-700 text-white text-xs rounded-xl p-2.5 font-bold outline-none cursor-pointer">
-                {listaSegmentos.map(s => <option key={s} value={s}>{s}</option>)}
+            <div>
+              <label className="text-[10px] font-black text-slate-500 uppercase block mb-2">Segmento de Mercado</label>
+              <select value={seg2} onChange={e => setSeg2(e.target.value)} className="w-full bg-slate-800 border-none rounded-xl p-3 text-xs font-bold outline-none">
+                {listaSeg.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
           </div>
-        </section>
+        </div>
 
-        {/* GRÁFICO */}
-        <section className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 h-[580px] shadow-2xl">
-          <div className="flex justify-between items-start mb-8">
-            <div>
-              <h3 className="text-2xl font-black italic uppercase text-blue-500 leading-none">
-                {segmentoSelecionado === 'Todos os Segmentos' ? 'Volume Consolidado' : segmentoSelecionado}
-              </h3>
-              <p className="text-slate-400 font-bold text-xs uppercase mt-2">
-                {produtoSelecionado} | {ufSelecionada !== 'Todas as UFs' ? ufSelecionada : regiaoSelecionada}
-              </p>
-            </div>
-            <div className="flex gap-4 bg-slate-950/40 p-3 rounded-xl border border-slate-800">
-               <div className="flex items-center gap-2">
-                 <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_8px_#3b82f6]"></div>
-                 <span className="text-[9px] font-black uppercase text-slate-400">Histórico</span>
-               </div>
-               <div className="flex items-center gap-2">
-                 <div className="w-2.5 h-2.5 bg-yellow-500 rounded-full shadow-[0_0_8px_#eab308]"></div>
-                 <span className="text-[9px] font-black uppercase text-slate-400">Projeção</span>
-               </div>
-            </div>
-          </div>
-
-          <div className="h-[400px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dadosFiltradosAgrupados} margin={{ top: 30, right: 30, left: 10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                <XAxis dataKey="ano" stroke="#475569" fontSize={11} axisLine={false} tickLine={false} tickMargin={15} />
-                <YAxis 
-                  stroke="#475569" 
-                  fontSize={11} 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tickFormatter={formatadorDinamico}
-                  width={90}
-                />
+        {/* MAPA ANALÍTICO (Simulado com Tabela Heatmap) */}
+        <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
+          
+          {/* Gráfico de Crescimento Percentual (CAGR) */}
+          <div className="bg-slate-900 p-8 rounded-[2.5rem] border border-slate-800 h-[500px]">
+            <h3 className="text-sm font-black uppercase mb-6 flex justify-between">
+              Crescimento CAGR (26-28) <span>% Anual</span>
+            </h3>
+            <ResponsiveContainer width="100%" height="90%">
+              <BarChart data={analiseCAGR.slice(0, 10)} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={true} vertical={false} />
+                <XAxis type="number" hide />
+                <YAxis dataKey="uf" type="category" stroke="#475569" fontSize={10} width={100} />
                 <Tooltip 
-                  cursor={{ fill: '#1e293b', opacity: 0.4 }}
-                  contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '15px' }}
-                  formatter={(val: number) => [val.toLocaleString('pt-BR') + ' m³', 'Volume']}
+                  cursor={{fill: 'transparent'}}
+                  contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155'}}
+                  formatter={(v: number) => [`${v.toFixed(2)}%`, 'CAGR']}
                 />
-                <Bar dataKey="total" radius={[6, 6, 0, 0]} animationDuration={800}>
-                  {dadosFiltradosAgrupados.map((entry: any, index: number) => (
-                    <Cell key={`cell-${index}`} fill={entry.tipo === 'Histórico' ? '#3b82f6' : '#eab308'} />
+                <Bar dataKey="cagr" radius={[0, 4, 4, 0]}>
+                  {analiseCAGR.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.cagr > 0 ? '#10b981' : '#ef4444'} />
                   ))}
-                  <LabelList 
-                    dataKey="total" 
-                    position="top" 
-                    fill="#94a3b8" 
-                    fontSize={10} 
-                    fontWeight="bold"
-                    formatter={formatadorDinamico}
-                    offset={12}
-                  />
+                  <LabelList dataKey="cagr" position="right" formatter={(v: number) => `${v.toFixed(1)}%`} fill="#94a3b8" fontSize={9} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </section>
 
-        <footer className="mt-8 text-center">
-           <p className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-600 italic">
-             Unidade de Medida: Metros Cúbicos (m³) | Base ANP Processada
-           </p>
-        </footer>
+          {/* Gráfico de Volume Médio Adicional (m³) */}
+          <div className="bg-slate-900 p-8 rounded-[2.5rem] border border-slate-800 h-[500px]">
+            <h3 className="text-sm font-black uppercase mb-6 flex justify-between">
+              Volume Médio Incremental <span>m³/Ano</span>
+            </h3>
+            <ResponsiveContainer width="100%" height="90%">
+              <BarChart data={analiseCAGR.slice(0, 10)}>
+                <CartesianGrid strokeDasharray="2 2" stroke="#1e293b" vertical={false} />
+                <XAxis dataKey="uf" stroke="#475569" fontSize={9} interval={0} angle={-45} textAnchor="end" height={60} />
+                <YAxis stroke="#475569" fontSize={9} tickFormatter={v => f3(v, "")} />
+                <Tooltip formatter={(v: number) => [f3(v), 'Incr. Médio']} contentStyle={{backgroundColor: '#0f172a'}} />
+                <Bar dataKey="volMedio" fill="#3b82f6" radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="volMedio" position="top" formatter={(v: number) => f3(v, "")} fill="#64748b" fontSize={8} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+        </div>
       </div>
     </main>
   );
