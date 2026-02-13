@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, Legend 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList 
 } from 'recharts';
 import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps";
 import { scaleQuantize } from "d3-scale";
@@ -10,6 +10,7 @@ import Link from 'next/link';
 
 const geoUrl = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson";
 
+// Coordenadas centrais para os valores no mapa
 const centroidesUF: { [key: string]: [number, number] } = {
   "AC": [-70, -9], "AL": [-36.5, -9.5], "AP": [-51, 1.5], "AM": [-64, -4], "BA": [-41, -12],
   "CE": [-39, -5], "DF": [-47.9, -15.8], "ES": [-40.3, -19], "GO": [-49, -16], "MA": [-45, -5],
@@ -19,15 +20,17 @@ const centroidesUF: { [key: string]: [number, number] } = {
   "SE": [-37, -10.5], "TO": [-48, -10]
 };
 
-export default function PainelCompletoANP() {
+export default function PainelEstrategicoFinal() {
   const [dadosBrutos, setDadosBrutos] = useState<any[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   
+  // Filtros G1
   const [reg1, setReg1] = useState('Brasil Inteiro');
   const [uf1, setUf1] = useState('Todas as UFs');
   const [prod1, setProd1] = useState('Todos os Produtos');
   const [seg1, setSeg1] = useState('Todos os Segmentos');
 
+  // Filtros Estratégicos (2 e 3)
   const [prod2, setProd2] = useState('Todos os Produtos');
   const [seg2, setSeg2] = useState('Todos os Segmentos');
 
@@ -49,11 +52,6 @@ export default function PainelCompletoANP() {
     return `${parseFloat(n)}${s} ${unidade}`;
   };
 
-  const listaReg1 = useMemo(() => ['Brasil Inteiro', ...new Set(dadosBrutos.map(d => d['Região Geográfica']).filter(Boolean))].sort(), [dadosBrutos]);
-  const listaUF1 = useMemo(() => {
-    let f = reg1 === 'Brasil Inteiro' ? dadosBrutos : dadosBrutos.filter(d => d['Região Geográfica'] === reg1);
-    return ['Todas as UFs', ...new Set(f.map(d => d['UNIDADE DA FEDERAÇÃO']).filter(Boolean))].sort();
-  }, [dadosBrutos, reg1]);
   const listaProdGlobal = useMemo(() => ['Todos os Produtos', ...new Set(dadosBrutos.map(d => d.PRODUTO).filter(Boolean))].sort(), [dadosBrutos]);
   const listaSegGlobal = useMemo(() => ['Todos os Segmentos', ...new Set(dadosBrutos.map(d => d.SEGMENTO).filter(Boolean))].sort(), [dadosBrutos]);
 
@@ -90,8 +88,8 @@ export default function PainelCompletoANP() {
     }, {});
 
     return Object.values(ufsMap).map((d: any) => {
-      const taxaCagr = d.v2025 > 0 ? (Math.pow(d.v2028 / d.v2025, 1/3) - 1) : 0;
-      return { ...d, cagr: taxaCagr * 100, volIncremental: d.v2025 * taxaCagr };
+      const cagr = d.v2025 > 0 ? (Math.pow(d.v2028 / d.v2025, 1/3) - 1) : 0;
+      return { ...d, cagr: cagr * 100, volIncremental: d.v2025 * cagr };
     }).sort((a, b) => b.volIncremental - a.volIncremental);
   }, [dadosBrutos, prod2, seg2]);
 
@@ -99,7 +97,7 @@ export default function PainelCompletoANP() {
     .domain([-5, 5])
     .range(["#ef4444", "#f87171", "#475569", "#4ade80", "#22c55e"]);
 
-  const alturaGraficoUFs = Math.max(500, dadosEstrategicos.length * 35);
+  const alturaGraficoUFs = Math.max(600, dadosEstrategicos.length * 40);
 
   return (
     <main className="min-h-screen bg-slate-950 p-8 text-white font-sans">
@@ -114,76 +112,105 @@ export default function PainelCompletoANP() {
       </header>
 
       {/* --- GRÁFICO 1 --- */}
-      <section className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 mb-12">
+      <section className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 mb-12 shadow-2xl">
         <h2 className="text-sm font-black uppercase mb-6 text-blue-500 italic">1. Volume Consolidado Anual</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-           <select value={reg1} onChange={e => setReg1(e.target.value)} className="bg-slate-800 p-3 rounded-xl text-xs font-bold outline-none">{listaReg1.map(r => <option key={r} value={r}>{r}</option>)}</select>
-           <select value={uf1} onChange={e => setUf1(e.target.value)} className="bg-slate-800 p-3 rounded-xl text-xs font-bold outline-none">{listaUF1.map(u => <option key={u} value={u}>{u}</option>)}</select>
-           <select value={prod1} onChange={e => setProd1(e.target.value)} className="bg-slate-800 p-3 rounded-xl text-xs font-bold outline-none">{listaProdGlobal.map(p => <option key={p} value={p}>{p}</option>)}</select>
-           <select value={seg1} onChange={e => setSeg1(e.target.value)} className="bg-slate-800 p-3 rounded-xl text-xs font-bold outline-none">{listaSegGlobal.map(s => <option key={s} value={s}>{s}</option>)}</select>
+        
+        {/* Legenda Manual Corrigida */}
+        <div className="flex gap-6 mb-8 items-center bg-slate-800/30 w-fit px-6 py-3 rounded-2xl border border-slate-700">
+           <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Histórico</span>
+           </div>
+           <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.5)]"></div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Projeção</span>
+           </div>
         </div>
+
         <div className="h-[450px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={dadosG1}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-              <XAxis dataKey="ano" stroke="#475569" fontSize={11} />
-              <YAxis tickFormatter={v => f3(v, "")} stroke="#475569" fontSize={11} />
-              <Tooltip contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155'}} formatter={(v:any) => f3(v)} />
-              <Legend verticalAlign="top" align="left" iconType="circle" wrapperStyle={{ paddingBottom: '20px', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }} />
-              <Bar name="Histórico" dataKey="total">
+              <XAxis dataKey="ano" stroke="#475569" fontSize={11} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={v => f3(v, "")} stroke="#475569" fontSize={11} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '16px'}} formatter={(v:any) => f3(v)} />
+              <Bar dataKey="total" radius={[6, 6, 0, 0]}>
                 {dadosG1.map((entry: any, i) => (
                    <Cell key={i} fill={entry.tipo === 'Histórico' ? '#3b82f6' : '#eab308'} />
                 ))}
-                <LabelList dataKey="total" position="top" formatter={v => f3(v, "")} fill="#94a3b8" fontSize={10} offset={12} />
+                <LabelList dataKey="total" position="top" formatter={v => f3(v, "")} fill="#94a3b8" fontSize={10} offset={12} fontWeight="bold" />
               </Bar>
-              {/* Fake bars para a legenda */}
-              <Bar dataKey="none" name="Projeção" fill="#eab308" hide />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </section>
 
       {/* --- SEÇÃO ESTRATÉGICA --- */}
-      <div className="flex flex-col md:flex-row gap-6 items-center bg-slate-900/40 p-6 rounded-[2rem] border border-slate-800 mb-8">
-        <span className="text-[10px] font-black uppercase text-slate-500 italic">Filtros Estratégicos (2 e 3):</span>
-        <select value={prod2} onChange={e => setProd2(e.target.value)} className="bg-slate-800 p-2.5 rounded-xl text-xs font-bold">{listaProdGlobal.map(p => <option key={p} value={p}>{p}</option>)}</select>
-        <select value={seg2} onChange={e => setSeg2(e.target.value)} className="bg-slate-800 p-2.5 rounded-xl text-xs font-bold">{listaSegGlobal.map(s => <option key={s} value={s}>{s}</option>)}</select>
+      <div className="flex flex-col md:flex-row gap-6 items-center bg-slate-900/40 p-6 rounded-[2rem] border border-slate-800 mb-8 backdrop-blur-sm">
+        <span className="text-[10px] font-black uppercase text-slate-500 italic tracking-widest">Filtros Estratégicos (Mapa e Ranking):</span>
+        <select value={prod2} onChange={e => setProd2(e.target.value)} className="bg-slate-800 p-2.5 rounded-xl text-xs font-bold outline-none border border-slate-700">{listaProdGlobal.map(p => <option key={p} value={p}>{p}</option>)}</select>
+        <select value={seg2} onChange={e => setSeg2(e.target.value)} className="bg-slate-800 p-2.5 rounded-xl text-xs font-bold outline-none border border-slate-700">{listaSegGlobal.map(s => <option key={s} value={s}>{s}</option>)}</select>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
         {/* GRÁFICO 2: MAPA */}
-        <div className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 h-[700px]">
-          <h2 className="text-xs font-black uppercase mb-4 text-blue-500 italic">2. Mapa CAGR % (25-28)</h2>
-          <ComposableMap projection="geoMercator" projectionConfig={{ scale: 950, center: [-54, -15] }} style={{ width: "100%", height: "90%" }}>
-            <Geographies geography={geoUrl}>
-              {({ geographies }) => geographies.map((geo) => {
-                const ufNome = geo.properties.name.toUpperCase();
-                const d = dadosEstrategicos.find(item => item.uf.toUpperCase() === ufNome);
-                return <Geography key={geo.rsmKey} geography={geo} fill={d ? colorScale(d.cagr) : "#1e293b"} stroke="#0f172a" strokeWidth={0.5} />;
-              })}
-            </Geographies>
-            {dadosEstrategicos.map((d) => centroidesUF[d.sigla] && (
-              <Marker key={d.sigla} coordinates={centroidesUF[d.sigla]}>
-                <text textAnchor="middle" y={-5} style={{ fontSize: "8px", fontWeight: "900", fill: "#fff" }}>{d.sigla}</text>
-                <text textAnchor="middle" y={5} style={{ fontSize: "7px", fontWeight: "bold", fill: "#000" }}>{d.cagr.toFixed(1)}%</text>
-              </Marker>
-            ))}
-          </ComposableMap>
+        <div className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 h-[700px] flex flex-col shadow-2xl">
+          <h2 className="text-xs font-black uppercase mb-4 text-blue-500 italic tracking-widest">2. Crescimento CAGR % por Estado</h2>
+          <div className="flex-1 w-full overflow-hidden">
+            <ComposableMap projection="geoMercator" projectionConfig={{ scale: 900, center: [-54, -15] }} style={{ width: "100%", height: "100%" }}>
+              <Geographies geography={geoUrl}>
+                {({ geographies }) => geographies.map((geo) => {
+                  const ufNome = geo.properties.name.toUpperCase();
+                  const d = dadosEstrategicos.find(item => item.uf.toUpperCase() === ufNome);
+                  return (
+                    <Geography 
+                      key={geo.rsmKey} 
+                      geography={geo} 
+                      fill={d ? colorScale(d.cagr) : "#1e293b"} 
+                      stroke="#0f172a" 
+                      strokeWidth={0.5} 
+                    />
+                  );
+                })}
+              </Geographies>
+              {dadosEstrategicos.map((d) => centroidesUF[d.sigla] && (
+                <Marker key={d.sigla} coordinates={centroidesUF[d.sigla]}>
+                  <text 
+                    textAnchor="middle" 
+                    style={{ fontSize: "10px", fontWeight: "900", fill: "#fff", paintOrder: "stroke", stroke: "#000", strokeWidth: "2px" }}
+                  >
+                    {d.cagr > 0 ? `+${d.cagr.toFixed(1)}%` : `${d.cagr.toFixed(1)}%`}
+                  </text>
+                </Marker>
+              ))}
+            </ComposableMap>
+          </div>
         </div>
 
-        {/* GRÁFICO 3: VOLUME INCREMENTAL MÉDIO */}
-        <div className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 overflow-y-auto max-h-[700px]">
-          <h2 className="text-xs font-black uppercase mb-1 text-blue-500 italic">3. Crescimento Volumétrico Anual (m³)</h2>
-          <p className="text-[9px] text-slate-500 uppercase font-bold mb-6 italic">(Volume 2025 × CAGR %)</p>
+        {/* GRÁFICO 3: RANKING DE VOLUME */}
+        <div className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 overflow-y-auto max-h-[700px] shadow-2xl scrollbar-hide">
+          <h2 className="text-xs font-black uppercase mb-1 text-blue-500 italic tracking-widest">3. Volume Incremental Médio Anual (m³)</h2>
+          <p className="text-[9px] text-slate-500 uppercase font-bold mb-6 italic tracking-tighter">(Crescimento em m³ baseado no CAGR vs 2025)</p>
           <div style={{ height: `${alturaGraficoUFs}px` }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dadosEstrategicos} layout="vertical" margin={{ right: 50 }}>
+              <BarChart data={dadosEstrategicos} layout="vertical" margin={{ right: 60, left: 20 }}>
                 <XAxis type="number" hide />
-                <YAxis dataKey="uf" type="category" stroke="#475569" fontSize={9} width={110} axisLine={false} tickLine={false} />
-                <Tooltip cursor={{fill: '#1e293b'}} formatter={(v:any) => f3(v)} />
-                <Bar dataKey="volIncremental" radius={[0, 4, 4, 0]}>
-                  {dadosEstrategicos.map((entry, i) => <Cell key={i} fill={entry.volIncremental > 0 ? '#10b981' : '#ef4444'} />)}
-                  <LabelList dataKey="volIncremental" position="right" formatter={v => f3(v, "")} fill="#94a3b8" fontSize={9} />
+                <YAxis 
+                  dataKey="uf" 
+                  type="category" 
+                  stroke="#cbd5e1" 
+                  fontSize={12} 
+                  fontWeight="bold"
+                  width={140} 
+                  axisLine={false} 
+                  tickLine={false} 
+                />
+                <Tooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} formatter={(v:any) => f3(v)} contentStyle={{borderRadius: '12px', backgroundColor: '#0f172a'}} />
+                <Bar dataKey="volIncremental" radius={[0, 6, 6, 0]}>
+                  {dadosEstrategicos.map((entry, i) => (
+                    <Cell key={i} fill={entry.volIncremental > 0 ? '#10b981' : '#ef4444'} />
+                  ))}
+                  <LabelList dataKey="volIncremental" position="right" formatter={v => f3(v, "")} fill="#94a3b8" fontSize={11} fontWeight="bold" />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
