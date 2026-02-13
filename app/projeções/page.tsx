@@ -2,21 +2,21 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, ComposedChart, Line
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, Legend
 } from 'recharts';
 import Link from 'next/link';
 
-export default function PainelProjecaoAvancado() {
+export default function PainelEstrategicoANP() {
   const [dadosBrutos, setDadosBrutos] = useState<any[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   
-  // Filtros Gráfico 1 (Histórico/Projeção)
-  const [regiao1, setRegiao1] = useState('Brasil Inteiro');
+  // --- ESTADOS FILTROS GRÁFICO 1 ---
+  const [reg1, setReg1] = useState('Brasil Inteiro');
   const [uf1, setUf1] = useState('Todas as UFs');
   const [prod1, setProd1] = useState('Todos os Produtos');
   const [seg1, setSeg1] = useState('Todos os Segmentos');
 
-  // Filtros Gráfico 2 (Análise de Crescimento CAGR)
+  // --- ESTADOS FILTROS GRÁFICOS 2 E 3 (ESTRATÉGICOS) ---
   const [prod2, setProd2] = useState('GASOLINA C');
   const [seg2, setSeg2] = useState('POSTO REVENDEDOR');
 
@@ -39,112 +39,128 @@ export default function PainelProjecaoAvancado() {
     return `${parseFloat(n)}${s} ${unidade}`;
   };
 
-  // --- LÓGICA CAGR POR UF ---
-  const analiseCAGR = useMemo(() => {
-    // Filtra pelo Produto e Segmento específicos do Gráfico 2
-    const filtrados = dadosBrutos.filter(d => d.PRODUTO === prod2 && d.SEGMENTO === seg2);
-    
-    const ufsMap = filtrados.reduce((acc: any, curr) => {
+  // --- LÓGICA GRÁFICO 1 (VOLUME ANUAL) ---
+  const dadosG1 = useMemo(() => {
+    let f = dadosBrutos;
+    if (reg1 !== 'Brasil Inteiro') f = f.filter(d => d['Região Geográfica'] === reg1);
+    if (uf1 !== 'Todas as UFs') f = f.filter(d => d['UNIDADE DA FEDERAÇÃO'] === uf1);
+    if (prod1 !== 'Todos os Produtos') f = f.filter(d => d['PRODUTO'] === prod1);
+    if (seg1 !== 'Todos os Segmentos') f = f.filter(d => d['SEGMENTO'] === seg1);
+
+    const m = f.reduce((acc: any, curr) => {
+      const ano = curr.DATA.substring(0, 4);
+      if (!acc[ano]) acc[ano] = { ano, total: 0, tipo: curr.TIPO };
+      acc[ano].total += parseFloat(curr.VENDAS || curr.PREVISAO || 0);
+      return acc;
+    }, {});
+    return Object.values(m).sort((a: any, b: any) => a.ano - b.ano);
+  }, [dadosBrutos, reg1, uf1, prod1, seg1]);
+
+  // --- LÓGICA GRÁFICOS 2 E 3 (CAGR E VOLUME POR UF) ---
+  const dadosEstrategicos = useMemo(() => {
+    const f = dadosBrutos.filter(d => d.PRODUTO === prod2 && d.SEGMENTO === seg2);
+    const ufsMap = f.reduce((acc: any, curr) => {
       const uf = curr['UNIDADE DA FEDERAÇÃO'];
       const ano = curr.DATA.substring(0, 4);
       if (!acc[uf]) acc[uf] = { uf, v2025: 0, v2028: 0 };
-      
-      const valor = parseFloat(curr.VENDAS || curr.PREVISAO || 0);
-      if (ano === '2025') acc[uf].v2025 += valor;
-      if (ano === '2028') acc[uf].v2028 += valor;
+      const val = parseFloat(curr.VENDAS || curr.PREVISAO || 0);
+      if (ano === '2025') acc[uf].v2025 += val;
+      if (ano === '2028') acc[uf].v2028 += val;
       return acc;
     }, {});
 
-    return Object.values(ufsMap).map((d: any) => {
-      // Cálculo CAGR: ((Final/Base)^(1/3)) - 1
-      const cagr = d.v2025 > 0 ? (Math.pow(d.v2028 / d.v2025, 1/3) - 1) * 100 : 0;
-      // Crescimento médio anual em volume
-      const volMedio = (d.v2028 - d.v2025) / 3;
-      return { ...d, cagr, volMedio };
-    }).sort((a, b) => b.cagr - a.cagr); // Ordena pelos que mais crescem %
+    return Object.values(ufsMap).map((d: any) => ({
+      uf: d.uf,
+      cagr: d.v2025 > 0 ? (Math.pow(d.v2028 / d.v2025, 1/3) - 1) * 100 : 0,
+      vol2028: d.v2028
+    })).sort((a, b) => b.vol2028 - a.vol2028); // Ordenado pelo volume de 2028
   }, [dadosBrutos, prod2, seg2]);
 
-  // Listas de filtros (únicas)
-  const listaProd = useMemo(() => [...new Set(dadosBrutos.map(d => d.PRODUTO))].sort(), [dadosBrutos]);
-  const listaSeg = useMemo(() => [...new Set(dadosBrutos.map(d => d.SEGMENTO))].sort(), [dadosBrutos]);
+  if (erro) return <div className="p-20 text-red-500 bg-slate-950 min-h-screen">Erro: {erro}</div>;
 
   return (
-    <main className="min-h-screen bg-slate-950 p-8 text-white font-sans">
-      <h1 className="text-4xl font-black italic uppercase mb-12 tracking-tighter">
-        Intelligence <span className="text-blue-500">Center</span> ANP
-      </h1>
+    <main className="min-h-screen bg-slate-950 p-8 text-white">
+      <header className="mb-12 border-b border-slate-800 pb-6">
+        <h1 className="text-5xl font-black italic tracking-tighter uppercase">Market <span className="text-blue-500">Forecasting</span></h1>
+        <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-2">Plataforma de Inteligência Preditiva de Combustíveis</p>
+      </header>
 
-      {/* GRÁFICO 1 - VOLUME ANUAL (OMITIDO AQUI PARA FOCO NO NOVO) */}
-      <section className="mb-20 opacity-50 italic text-xs">... Gráfico 1 de Volume Anual Acima ...</section>
+      {/* --- GRÁFICO 1: VOLUME TEMPORAL --- */}
+      <section className="mb-16">
+        <div className="bg-slate-900/50 p-8 rounded-[3rem] border border-slate-800">
+          <h2 className="text-xl font-black italic mb-6 uppercase text-blue-500">1. Evolução Temporal de Mercado</h2>
+          {/* Aqui entrariam os filtros do Gráfico 1 (omitidos para brevidade) */}
+          <div className="h-[400px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dadosG1}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                <XAxis dataKey="ano" stroke="#475569" fontSize={11} />
+                <YAxis stroke="#475569" fontSize={11} tickFormatter={v => f3(v, "")} />
+                <Tooltip contentStyle={{backgroundColor: '#0f172a'}} formatter={(v:any) => f3(v)} />
+                <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                  {dadosG1.map((entry: any, i) => <Cell key={i} fill={entry.tipo === 'Histórico' ? '#3b82f6' : '#eab308'} />)}
+                  <LabelList dataKey="total" position="top" formatter={v => f3(v, "")} fill="#94a3b8" fontSize={10} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </section>
 
-      {/* SEÇÃO GRÁFICO 2 - ANÁLISE ESTRATÉGICA CAGR */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
-        <div className="lg:col-span-1 bg-slate-900/80 p-6 rounded-[2rem] border border-blue-500/20 shadow-xl">
-          <h2 className="text-lg font-black italic mb-6 text-blue-400 uppercase">Filtros de Estratégia</h2>
-          <div className="space-y-6">
-            <div>
-              <label className="text-[10px] font-black text-slate-500 uppercase block mb-2">Produto Analisado</label>
-              <select value={prod2} onChange={e => setProd2(e.target.value)} className="w-full bg-slate-800 border-none rounded-xl p-3 text-xs font-bold outline-none">
-                {listaProd.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-[10px] font-black text-slate-500 uppercase block mb-2">Segmento de Mercado</label>
-              <select value={seg2} onChange={e => setSeg2(e.target.value)} className="w-full bg-slate-800 border-none rounded-xl p-3 text-xs font-bold outline-none">
-                {listaSeg.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
+      <hr className="border-slate-800 mb-16" />
+
+      {/* --- SEÇÃO ESTRATÉGICA (GRÁFICOS 2 E 3) --- */}
+      <section>
+        <div className="flex justify-between items-end mb-8">
+          <h2 className="text-3xl font-black italic uppercase">Análise de <span className="text-emerald-500">Oportunidades</span></h2>
+          <div className="flex gap-4">
+             <select value={prod2} onChange={e => setProd2(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs font-bold outline-none">
+                {[...new Set(dadosBrutos.map(d => d.PRODUTO))].map(p => <option key={p} value={p}>{p}</option>)}
+             </select>
+             <select value={seg2} onChange={e => setSeg2(e.target.value)} className="bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs font-bold outline-none">
+                {[...new Set(dadosBrutos.map(d => d.SEGMENTO))].map(s => <option key={s} value={s}>{s}</option>)}
+             </select>
           </div>
         </div>
 
-        {/* MAPA ANALÍTICO (Simulado com Tabela Heatmap) */}
-        <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           
-          {/* Gráfico de Crescimento Percentual (CAGR) */}
-          <div className="bg-slate-900 p-8 rounded-[2.5rem] border border-slate-800 h-[500px]">
-            <h3 className="text-sm font-black uppercase mb-6 flex justify-between">
-              Crescimento CAGR (26-28) <span>% Anual</span>
-            </h3>
+          {/* GRÁFICO 2: RANKING CAGR (Mapeamento de Crescimento %) */}
+          <div className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 h-[600px]">
+            <h3 className="text-xs font-black uppercase text-slate-500 mb-6 tracking-widest italic italic">2. Mapa de Crescimento (CAGR % Anual 25-28)</h3>
             <ResponsiveContainer width="100%" height="90%">
-              <BarChart data={analiseCAGR.slice(0, 10)} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={true} vertical={false} />
+              <BarChart data={dadosEstrategicos} layout="vertical" margin={{ left: 30 }}>
                 <XAxis type="number" hide />
-                <YAxis dataKey="uf" type="category" stroke="#475569" fontSize={10} width={100} />
-                <Tooltip 
-                  cursor={{fill: 'transparent'}}
-                  contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155'}}
-                  formatter={(v: number) => [`${v.toFixed(2)}%`, 'CAGR']}
-                />
+                <YAxis dataKey="uf" type="category" stroke="#475569" fontSize={10} width={100} axisLine={false} tickLine={false} />
+                <Tooltip cursor={{fill: '#1e293b'}} contentStyle={{backgroundColor: '#0f172a', border: '1px solid #334155'}} />
                 <Bar dataKey="cagr" radius={[0, 4, 4, 0]}>
-                  {analiseCAGR.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.cagr > 0 ? '#10b981' : '#ef4444'} />
+                  {dadosEstrategicos.map((entry, i) => (
+                    <Cell key={i} fill={entry.cagr > 0 ? '#10b981' : '#ef4444'} fillOpacity={0.8} />
                   ))}
-                  <LabelList dataKey="cagr" position="right" formatter={(v: number) => `${v.toFixed(1)}%`} fill="#94a3b8" fontSize={9} />
+                  <LabelList dataKey="cagr" position="right" formatter={(v:number) => `${v.toFixed(2)}%`} fill="#94a3b8" fontSize={10} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
 
-          {/* Gráfico de Volume Médio Adicional (m³) */}
-          <div className="bg-slate-900 p-8 rounded-[2.5rem] border border-slate-800 h-[500px]">
-            <h3 className="text-sm font-black uppercase mb-6 flex justify-between">
-              Volume Médio Incremental <span>m³/Ano</span>
-            </h3>
+          {/* GRÁFICO 3: VOLUME POR UF (Ordenado do Maior para Menor) */}
+          <div className="bg-slate-900 p-8 rounded-[3rem] border border-slate-800 h-[600px]">
+            <h3 className="text-xs font-black uppercase text-slate-500 mb-6 tracking-widest italic">3. Volume Projetado em 2028 (Ordenado por m³)</h3>
             <ResponsiveContainer width="100%" height="90%">
-              <BarChart data={analiseCAGR.slice(0, 10)}>
+              <BarChart data={dadosEstrategicos} margin={{ bottom: 50 }}>
                 <CartesianGrid strokeDasharray="2 2" stroke="#1e293b" vertical={false} />
-                <XAxis dataKey="uf" stroke="#475569" fontSize={9} interval={0} angle={-45} textAnchor="end" height={60} />
-                <YAxis stroke="#475569" fontSize={9} tickFormatter={v => f3(v, "")} />
-                <Tooltip formatter={(v: number) => [f3(v), 'Incr. Médio']} contentStyle={{backgroundColor: '#0f172a'}} />
-                <Bar dataKey="volMedio" fill="#3b82f6" radius={[4, 4, 0, 0]}>
-                  <LabelList dataKey="volMedio" position="top" formatter={(v: number) => f3(v, "")} fill="#64748b" fontSize={8} />
+                <XAxis dataKey="uf" stroke="#475569" fontSize={9} interval={0} angle={-45} textAnchor="end" />
+                <YAxis stroke="#475569" fontSize={10} tickFormatter={v => f3(v, "")} />
+                <Tooltip contentStyle={{backgroundColor: '#0f172a'}} formatter={(v:any) => f3(v)} />
+                <Bar dataKey="vol2028" fill="#3b82f6" radius={[4, 4, 0, 0]}>
+                  <LabelList dataKey="vol2028" position="top" formatter={v => f3(v, "")} fill="#64748b" fontSize={8} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
 
         </div>
-      </div>
+      </section>
     </main>
   );
 }
