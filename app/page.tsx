@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import React, { useState, useEffect, useMemo } from 'react';
 // @ts-expect-error
 import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
@@ -22,7 +23,6 @@ const mapConfigs: Record<string, { center: [number, number]; scale: number }> = 
   "Sul": { center: [-52, -27], scale: 3000 },
 };
 
-// Coordenadas para os textos de Share no Mapa
 const centrosEstados: Record<string, [number, number]> = {
   'AC': [-70.81, -9.02], 'AL': [-36.78, -9.57], 'AP': [-51.77, 1.41], 'AM': [-64.63, -3.41],
   'BA': [-41.71, -12.96], 'CE': [-39.53, -5.20], 'DF': [-47.88, -15.77], 'ES': [-40.30, -19.19],
@@ -138,17 +138,27 @@ export default function DashboardVendas() {
     <main className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-900 font-sans">
       <div className="max-w-[1700px] mx-auto">
         
-        {/* FILTROS */}
+        {/* CABEÇALHO COM BOTÃO DE PROJEÇÕES INTEGRADO */}
         <header className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 mb-8">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-            <div>
-              <h1 className="text-3xl font-black tracking-tighter text-blue-900 italic">ANP|INSIGHTS</h1>
-              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">SESSÃO: {session.user?.name}</p>
+            <div className="flex items-center gap-6">
+              <div>
+                <h1 className="text-3xl font-black tracking-tighter text-blue-900 italic">ANP|INSIGHTS</h1>
+                <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">SESSÃO: {session.user?.name}</p>
+              </div>
+              
+              {/* BOTÃO DE PROJEÇÕES */}
+              <Link href="/projeções">
+                <button className="bg-slate-900 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wider hover:bg-blue-600 transition-all flex items-center gap-2 shadow-lg shadow-blue-900/10">
+                  <span className="text-blue-400 text-lg">➔</span> Ver Projeções 2026-2028
+                </button>
+              </Link>
             </div>
+
             <div className="flex flex-wrap gap-2">
               {listaAnos.map(ano => (
                 <button key={ano} onClick={() => setAnoSelecionado(ano)}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${anoSelecionado === ano ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-50 text-slate-400'}`}>
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${anoSelecionado === ano ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}>
                   {ano}
                 </button>
               ))}
@@ -257,7 +267,7 @@ export default function DashboardVendas() {
             </div>
           </div>
 
-          {/* LADO DIREITO: RANKING COM FONTES GRANDES */}
+          {/* LADO DIREITO: RANKING */}
           <div className="flex-1 min-w-[350px] bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
             <h3 className="text-[10px] font-black text-slate-400 mb-8 uppercase tracking-widest italic">Ranking Detalhado por Performance</h3>
             
