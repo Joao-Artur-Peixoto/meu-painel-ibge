@@ -7,19 +7,22 @@ import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps
 // @ts-expect-error
 import { scaleQuantile } from 'd3-scale';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, Legend
 } from 'recharts';
 import { useSession, signIn } from "next-auth/react";
 
 const geoUrl = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson";
+const CORES_PRODUTOS: Record<string, string> = {
+  'DIESEL': '#1e3a8a', 'GASOLINA': '#3b82f6', 'ETANOL': '#10b981', 'GLP': '#f59e0b', 'OUTROS': '#64748b'
+};
 
 const mapConfigs: Record<string, { center: [number, number]; scale: number }> = {
-  "Brasil Inteiro": { center: [-55, -15], scale: 950 },
-  "Norte": { center: [-63, -4], scale: 1900 },
-  "Nordeste": { center: [-41, -11], scale: 2400 },
-  "Centro-Oeste": { center: [-56, -16], scale: 2200 },
-  "Sudeste": { center: [-46, -21], scale: 3000 },
-  "Sul": { center: [-52, -27], scale: 3000 },
+  "Brasil Inteiro": { center: [-55, -15], scale: 1100 },
+  "Norte": { center: [-63, -4], scale: 2000 },
+  "Nordeste": { center: [-41, -11], scale: 2600 },
+  "Centro-Oeste": { center: [-56, -16], scale: 2400 },
+  "Sudeste": { center: [-46, -21], scale: 3200 },
+  "Sul": { center: [-52, -27], scale: 3200 },
 };
 
 const centrosEstados: Record<string, [number, number]> = {
@@ -32,7 +35,7 @@ const centrosEstados: Record<string, [number, number]> = {
   'SP': [-48.54, -22.19], 'SE': [-37.44, -10.57], 'TO': [-48.25, -10.17]
 };
 
-export default function DashboardVendas() {
+export default function DashboardEstrategicoVendas() {
   const { data: session, status } = useSession();
   const [dados, setDados] = useState<any[]>([]);
   const [anoSelecionado, setAnoSelecionado] = useState<number | null>(null);
@@ -41,260 +44,148 @@ export default function DashboardVendas() {
   const [segmentosSelecionados, setSegmentosSelecionados] = useState<string[]>([]);
 
   useEffect(() => {
-    fetch('/dados_vendas.json')
-      .then(res => res.json())
-      .then(data => {
-        setDados(data);
-        if (data.length > 0) {
-          const anos = [...new Set(data.map((d: any) => new Date(d.DATA).getFullYear()))].sort((a: any, b: any) => b - a);
-          setAnoSelecionado(anos[0]);
-        }
-      });
+    fetch('/dados_vendas.json').then(res => res.json()).then(data => {
+      setDados(data);
+      if (data.length > 0) {
+        const anos = [...new Set(data.map((d: any) => new Date(d.DATA).getFullYear()))].sort((a: any, b: any) => b - a);
+        setAnoSelecionado(anos[0]);
+      }
+    });
   }, []);
 
-  // --- LÓGICA DE FILTRAGEM DINÂMICA E SHARE ---
-  const { metricasAno, listaAnos, listaProdutos, listaRegioes, listaSegmentos, shareCalculado } = useMemo(() => {
+  // --- LÓGICA DE FILTRAGEM E SHARE ---
+  const { metricasAno, listaAnos, listaProdutos, listaRegioes, listaSegmentos, shareCalculado, dadosMensais, estatisticasEstado, totalFiltro } = useMemo(() => {
     const anosUnicos = [...new Set(dados.map(d => new Date(d.DATA).getFullYear()))].sort((a, b) => b - a).slice(0, 10);
     const prods = [...new Set(dados.map(d => d.PRODUTO))].sort();
     const regs = [...new Set(dados.map(d => d['Região Geográfica']))].filter(Boolean).sort();
     const segs = [...new Set(dados.map(d => d.SEGMENTO))].filter(Boolean).sort();
 
-    // Base para crescimento anual (YOY)
-    const calcularVolAno = (ano: number) => {
-      let f = dados.filter(d => new Date(d.DATA).getFullYear() === ano);
-      if (regiaoSelecionada !== 'Brasil Inteiro') f = f.filter(d => d['Região Geográfica'] === regiaoSelecionada);
-      if (produtosSelecionados.length > 0) f = f.filter(d => produtosSelecionados.includes(d.PRODUTO));
-      if (segmentosSelecionados.length > 0) f = f.filter(d => segmentosSelecionados.includes(d.SEGMENTO));
-      return f.reduce((a, b) => a + b.VENDAS, 0);
-    };
-
-    const crescimentos = anosUnicos.map(ano => {
-      const vAtual = calcularVolAno(ano);
-      const vAnterior = calcularVolAno(ano - 1);
-      return { ano, cresc: vAnterior > 0 ? ((vAtual - vAnterior) / vAnterior) * 100 : 0 };
-    });
-
-    // CÁLCULO DE PARTICIPAÇÃO DINÂMICA (Baseado nos outros filtros aplicados)
-    const baseAno = dados.filter(d => new Date(d.DATA).getFullYear() === anoSelecionado);
-
-    const getShareDinamico = (lista: string[], campoFoco: string, outrosFiltros: { reg?: string, prod?: string[], seg?: string[] }) => {
-      // 1. Calcular o total da base considerando APENAS os filtros que NÃO são o campo foco
-      let baseFiltroGlobal = baseAno;
-      if (campoFoco !== 'Região Geográfica' && outrosFiltros.reg !== 'Brasil Inteiro') 
-        baseFiltroGlobal = baseFiltroGlobal.filter(d => d['Região Geográfica'] === outrosFiltros.reg);
-      if (campoFoco !== 'PRODUTO' && outrosFiltros.prod && outrosFiltros.prod.length > 0) 
-        baseFiltroGlobal = baseFiltroGlobal.filter(d => outrosFiltros.prod?.includes(d.PRODUTO));
-      if (campoFoco !== 'SEGMENTO' && outrosFiltros.seg && outrosFiltros.seg.length > 0) 
-        baseFiltroGlobal = baseFiltroGlobal.filter(d => outrosFiltros.seg?.includes(d.SEGMENTO));
-
-      const totalGlobal = baseFiltroGlobal.reduce((a, b) => a + b.VENDAS, 0);
-
-      // 2. Calcular quanto cada item representa desse total filtrado
-      return lista.reduce((acc: any, nome) => {
-        const volItem = baseFiltroGlobal.filter(d => d[campoFoco] === nome).reduce((a, b) => a + b.VENDAS, 0);
-        acc[nome] = totalGlobal > 0 ? (volItem / totalGlobal) * 100 : 0;
-        return acc;
-      }, {});
-    };
-
-    const filtroAtual = { reg: regiaoSelecionada, prod: produtosSelecionados, seg: segmentosSelecionados };
-
-    return { 
-      listaAnos: anosUnicos, 
-      metricasAno: crescimentos,
-      listaProdutos: prods,
-      listaRegioes: regs,
-      listaSegmentos: segs,
-      shareCalculado: {
-        regiao: getShareDinamico(['Brasil Inteiro', ...regs], 'Região Geográfica', filtroAtual),
-        produto: getShareDinamico(prods, 'PRODUTO', filtroAtual),
-        segmento: getShareDinamico(segs, 'SEGMENTO', filtroAtual)
-      }
-    };
-  }, [dados, anoSelecionado, regiaoSelecionada, produtosSelecionados, segmentosSelecionados]);
-
-  // Ranking e Total
-  const { estatisticasEstado, totalFiltro } = useMemo(() => {
+    // Filtro Global
     let f = dados.filter(d => new Date(d.DATA).getFullYear() === anoSelecionado);
     if (regiaoSelecionada !== 'Brasil Inteiro') f = f.filter(d => d['Região Geográfica'] === regiaoSelecionada);
     if (produtosSelecionados.length > 0) f = f.filter(d => produtosSelecionados.includes(d.PRODUTO));
     if (segmentosSelecionados.length > 0) f = f.filter(d => segmentosSelecionados.includes(d.SEGMENTO));
 
-    const total = f.reduce((a, b) => a + b.VENDAS, 0);
-    const agrupado = f.reduce((acc: any, curr) => {
+    const totalF = f.reduce((a, b) => a + b.VENDAS, 0);
+
+    // Crescimento YOY
+    const crescimentos = anosUnicos.map(ano => {
+      const vAtual = dados.filter(d => new Date(d.DATA).getFullYear() === ano && (regiaoSelecionada === 'Brasil Inteiro' || d['Região Geográfica'] === regiaoSelecionada)).reduce((a,b)=>a+b.VENDAS,0);
+      const vAnterior = dados.filter(d => new Date(d.DATA).getFullYear() === (ano-1) && (regiaoSelecionada === 'Brasil Inteiro' || d['Região Geográfica'] === regiaoSelecionada)).reduce((a,b)=>a+b.VENDAS,0);
+      return { ano, cresc: vAnterior > 0 ? ((vAtual - vAnterior) / vAnterior) * 100 : 0 };
+    });
+
+    // Share Dinâmico
+    const getShare = (lista: string[], campo: string) => lista.reduce((acc: any, n) => {
+      const v = f.filter(d => d[campo] === n).reduce((a, b) => a + b.VENDAS, 0);
+      acc[n] = totalF > 0 ? (v / totalF) * 100 : 0;
+      return acc;
+    }, {});
+
+    // Ranking UF
+    const agrupadoUF = f.reduce((acc: any, curr) => {
       if (!acc[curr.UF]) acc[curr.UF] = { total: 0, nome: curr['UNIDADE DA FEDERAÇÃO'] };
       acc[curr.UF].total += curr.VENDAS;
       return acc;
     }, {});
-
-    const lista = Object.keys(agrupado).map(uf => ({
-      id: uf, vendas: agrupado[uf].total, share: total > 0 ? (agrupado[uf].total / total) * 100 : 0, nomeCompleto: agrupado[uf].nome
+    const ranking = Object.keys(agrupadoUF).map(uf => ({
+      id: uf, vendas: agrupadoUF[uf].total, share: totalF > 0 ? (agrupadoUF[uf].total / totalF) * 100 : 0, nomeCompleto: agrupadoUF[uf].nome
     })).sort((a, b) => b.vendas - a.vendas);
 
-    return { estatisticasEstado: lista, totalFiltro: total };
+    // Gráfico Mensal Empilhado
+    const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    const dMensal = meses.map((nome, i) => {
+      const mesData = f.filter(d => new Date(d.DATA).getMonth() === i);
+      const totalMes = mesData.reduce((a, b) => a + b.VENDAS, 0);
+      const entry: any = { name: nome, total: totalMes };
+      prods.forEach(p => {
+        entry[p] = mesData.filter(d => d.PRODUTO === p).reduce((a, b) => a + b.VENDAS, 0);
+      });
+      return entry;
+    });
+
+    return { 
+      listaAnos: anosUnicos, metricasAno: crescimentos, listaProdutos: prods, listaRegioes: regs, listaSegmentos: segs,
+      shareCalculado: { regiao: getShare(['Brasil Inteiro', ...regs], 'Região Geográfica'), produto: getShare(prods, 'PRODUTO'), segmento: getShare(segs, 'SEGMENTO') },
+      dadosMensais: dMensal, estatisticasEstado: ranking, totalFiltro: totalF
+    };
   }, [dados, anoSelecionado, regiaoSelecionada, produtosSelecionados, segmentosSelecionados]);
 
-  const getShareColor = (percent: number) => {
-    if (percent === 0) return 'bg-transparent text-slate-300';
-    if (percent < 5) return 'bg-blue-50 text-blue-400';
-    if (percent < 20) return 'bg-blue-100 text-blue-600';
-    return 'bg-blue-600 text-white';
-  };
-
-  if (status === "loading") return <div className="min-h-screen flex items-center justify-center font-black animate-pulse text-blue-900 uppercase italic">Carregando BI...</div>;
+  if (status === "loading") return <div className="min-h-screen flex items-center justify-center font-black animate-pulse text-blue-900 uppercase italic">Iniciando Dashboard...</div>;
+  if (!session) return <div className="min-h-screen flex items-center justify-center bg-slate-900"><button onClick={() => signIn('google')} className="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black">ENTRAR</button></div>;
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-900 font-sans">
       <div className="max-w-[1700px] mx-auto">
         
+        {/* HEADER FILTROS (MANTIDO CONFORME ÚLTIMO PEDIDO) */}
         <header className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-200 mb-8">
           <div className="flex justify-between items-center mb-10">
             <h1 className="text-3xl font-black tracking-tighter text-blue-900 italic uppercase">ANP|INSIGHTS BI</h1>
-            <Link href="/projeções" className="bg-slate-900 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase hover:bg-blue-600 transition-all shadow-lg">➔ Projeções</Link>
+            <Link href="/projeções" className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase hover:bg-blue-600 transition-all shadow-lg">➔ Projeções</Link>
           </div>
 
           <div className="space-y-12">
-            {/* FILTRO ANO (MANTIDO) */}
             <div className="flex items-start gap-8">
-              <div className="w-32 pt-2 shrink-0">
-                <span className="text-[10px] font-black uppercase text-slate-400 italic">Filtro de Ano</span>
-                <div className="mt-8 text-[10px] font-black uppercase text-slate-400 italic">Crescimento</div>
-              </div>
+              <div className="w-32 pt-2 shrink-0"><span className="text-[10px] font-black uppercase text-slate-400 italic">Filtro de Ano</span><div className="mt-8 text-[10px] font-black uppercase text-slate-400 italic">Crescimento</div></div>
               <div className="flex gap-2">
                 {listaAnos.map(ano => {
-                  const meta = metricasAno.find(m => m.ano === ano);
+                  const m = metricasAno.find(i => i.ano === ano);
                   return (
                     <div key={ano} className="flex flex-col gap-2 w-20">
-                      <button onClick={() => setAnoSelecionado(ano)} 
-                        className={`w-full py-2 rounded-lg text-xs font-black transition-all ${anoSelecionado === ano ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>{ano}</button>
-                      <div className={`w-full py-1.5 rounded-lg text-[10px] font-black text-center border ${meta && meta.cresc >= 0 ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-red-50 border-red-100 text-red-600'}`}>
-                        {meta?.cresc ? (meta.cresc > 0 ? '+' : '') + meta.cresc.toFixed(1) + '%' : '0%'}
-                      </div>
+                      <button onClick={() => setAnoSelecionado(ano)} className={`w-full py-2 rounded-lg text-xs font-black ${anoSelecionado === ano ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>{ano}</button>
+                      <div className={`w-full py-1.5 rounded-lg text-[10px] font-black text-center border ${m && m.cresc >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{m?.cresc.toFixed(1)}%</div>
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            <hr className="border-slate-100" />
-
-            {/* FILTROS ESTRUTURADOS COM CONTAINERS ALINHADOS */}
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-16">
-              
-              {/* BLOCO REGIAO */}
-              <div className="flex items-start gap-6">
-                <div className="w-20 pt-1 shrink-0">
-                  <span className="text-[10px] font-black uppercase text-slate-400 italic">Região</span>
-                  <div className="mt-8 text-[10px] font-black uppercase text-slate-400 italic">Part. (%)</div>
+              {[ {label: 'Região', list: ['Brasil Inteiro', ...listaRegioes], key: 'regiao', state: regiaoSelecionada, set: setRegiaoSelecionada, multi: false },
+                 {label: 'Produto', list: listaProdutos, key: 'produto', state: produtosSelecionados, set: setProdutosSelecionados, multi: true },
+                 {label: 'Segmento', list: listaSegmentos, key: 'segmento', state: segmentosSelecionados, set: setSegmentosSelecionados, multi: true }
+              ].map((bloco, idx) => (
+                <div key={idx} className="flex items-start gap-6">
+                  <div className="w-20 pt-1 shrink-0"><span className="text-[10px] font-black uppercase text-slate-400 italic">{bloco.label}</span><div className="mt-8 text-[10px] font-black uppercase text-slate-400 italic">Part. (%)</div></div>
+                  <div className="flex gap-2 flex-wrap">
+                    {bloco.list.map(item => {
+                      const isSel = bloco.multi ? (bloco.state as string[]).includes(item) : bloco.state === item;
+                      const share = bloco.key === 'regiao' && item === 'Brasil Inteiro' ? 100 : (shareCalculado as any)[bloco.key][item];
+                      return (
+                        <div key={item} className="flex flex-col gap-2 w-[85px]">
+                          <button onClick={() => bloco.multi ? (bloco.set as any)(prev => prev.includes(item) ? prev.filter(i=>i!==item) : [...prev, item]) : (bloco.set as any)(item)} 
+                            className={`w-full h-10 px-1 rounded-lg text-[10px] font-black border leading-tight ${isSel ? 'bg-blue-50 border-blue-600 text-blue-700' : 'bg-white border-slate-200 text-slate-400'}`}>{item}</button>
+                          <div className={`w-full py-1.5 rounded-lg text-[10px] font-black text-center border border-transparent ${share > 20 ? 'bg-blue-600 text-white' : share > 0 ? 'bg-blue-100 text-blue-600' : 'text-slate-200'}`}>{share?.toFixed(1)}%</div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="flex gap-2 flex-wrap">
-                  {['Brasil Inteiro', ...listaRegioes].map(r => (
-                    <div key={r} className="flex flex-col gap-2 w-[85px]">
-                      <button onClick={() => setRegiaoSelecionada(r)} 
-                        className={`w-full h-10 px-1 rounded-lg text-[10px] font-black border leading-tight transition-all ${regiaoSelecionada === r ? 'bg-blue-50 border-blue-600 text-blue-700' : 'bg-white border-slate-200 text-slate-400'}`}>{r}</button>
-                      <div className={`w-full py-1.5 rounded-lg text-[10px] font-black text-center border border-transparent ${getShareColor(r === 'Brasil Inteiro' ? 100 : shareCalculado.regiao[r])}`}>
-                        {r === 'Brasil Inteiro' ? '100%' : `${shareCalculado.regiao[r]?.toFixed(1)}%`}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* BLOCO PRODUTO */}
-              <div className="flex items-start gap-6">
-                <div className="w-20 pt-1 shrink-0">
-                  <span className="text-[10px] font-black uppercase text-slate-400 italic">Produto</span>
-                  <div className="mt-8 text-[10px] font-black uppercase text-slate-400 italic">Part. (%)</div>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  {listaProdutos.map(p => (
-                    <div key={p} className="flex flex-col gap-2 w-[85px]">
-                      <button onClick={() => setProdutosSelecionados(prev => prev.includes(p) ? prev.filter(i => i !== p) : [...prev, p])} 
-                        className={`w-full h-10 px-1 rounded-lg text-[10px] font-black border leading-tight transition-all ${produtosSelecionados.includes(p) ? 'bg-blue-50 border-blue-600 text-blue-700' : 'bg-white border-slate-200 text-slate-400'}`}>{p}</button>
-                      <div className={`w-full py-1.5 rounded-lg text-[10px] font-black text-center border border-transparent ${getShareColor(shareCalculado.produto[p])}`}>
-                        {shareCalculado.produto[p]?.toFixed(1)}%
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* BLOCO SEGMENTO */}
-              <div className="flex items-start gap-6">
-                <div className="w-20 pt-1 shrink-0">
-                  <span className="text-[10px] font-black uppercase text-slate-400 italic">Segmento</span>
-                  <div className="mt-8 text-[10px] font-black uppercase text-slate-400 italic">Part. (%)</div>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  {listaSegmentos.map(s => (
-                    <div key={s} className="flex flex-col gap-2 w-[85px]">
-                      <button onClick={() => setSegmentosSelecionados(prev => prev.includes(s) ? prev.filter(i => i !== s) : [...prev, s])} 
-                        className={`w-full h-10 px-1 rounded-lg text-[10px] font-black border leading-tight transition-all ${segmentosSelecionados.includes(s) ? 'bg-blue-50 border-blue-600 text-blue-700' : 'bg-white border-slate-200 text-slate-400'}`}>{s}</button>
-                      <div className={`w-full py-1.5 rounded-lg text-[10px] font-black text-center border border-transparent ${getShareColor(shareCalculado.segmento[s])}`}>
-                        {shareCalculado.segmento[s]?.toFixed(1)}%
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
+              ))}
             </div>
           </div>
         </header>
 
-        {/* CORPO DO DASHBOARD (INVERTIDO) */}
-        <div className="flex flex-col xl:flex-row-reverse gap-8 items-start">
+        {/* CORPO PRINCIPAL: RANKING (ESQ) E MAPA (DIR - MAIOR) */}
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start mb-8">
           
-          <div className="w-full xl:w-[500px] shrink-0 xl:sticky xl:top-8 space-y-6">
+          {/* RANKING + TOTALIZADOR (4 colunas) */}
+          <div className="xl:col-span-4 space-y-6">
             <div className="bg-blue-600 p-8 rounded-[2.5rem] shadow-xl text-white relative overflow-hidden">
-              <h4 className="text-blue-100 text-[10px] font-black uppercase tracking-widest mb-1 italic">Vendas Consolidadas</h4>
+              <h4 className="text-blue-100 text-[10px] font-black uppercase tracking-widest mb-1 italic">Total no Ano</h4>
               <div className="text-5xl font-black tracking-tighter relative z-10">{totalFiltro.toLocaleString('pt-BR')} <span className="text-xl opacity-60">m³</span></div>
             </div>
 
-            <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm aspect-square overflow-hidden">
-               <ComposableMap projection="geoMercator" projectionConfig={{ scale: mapConfigs[regiaoSelecionada]?.scale || 950, center: mapConfigs[regiaoSelecionada]?.center || [-55, -15] }}>
-                  <Geographies geography={geoUrl}>
-                    {({ geographies }: any) => geographies.map((geo: any) => {
-                      const sigla = geo.properties.sigla;
-                      const data = estatisticasEstado.find(s => s.id === sigla);
-                      const pertence = regiaoSelecionada === 'Brasil Inteiro' || dados.find(d => d.UF === sigla)?.['Região Geográfica'] === regiaoSelecionada;
-                      
-                      const volumes = estatisticasEstado.map(d => d.vendas);
-                      const scale = scaleQuantile<string>().domain(volumes.length > 1 ? volumes : [0, 100]).range(["#dbeafe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e3a8a"]);
-                      
-                      return <Geography key={geo.rsmKey} geography={geo} fill={pertence ? (data ? scale(data.vendas) : "#f1f5f9") : "#f8fafc"} stroke="#ffffff" strokeWidth={0.5} />;
-                    })}
-                  </Geographies>
-                  {estatisticasEstado.map((estado) => {
-                    const coords = centrosEstados[estado.id];
-                    if (!coords || estado.share < 0.6) return null;
-                    return (
-                      <Marker key={estado.id} coordinates={coords}>
-                        <text textAnchor="middle" y={2} style={{ fontSize: "12px", fontWeight: 900, fill: "#1e3a8a", pointerEvents: "none", paintOrder: "stroke", stroke: "#ffffff", strokeWidth: "3px" }}>{estado.share.toFixed(1)}%</text>
-                      </Marker>
-                    );
-                  })}
-                </ComposableMap>
-            </div>
-          </div>
-
-          <div className="flex-1 min-w-[350px] bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
-            <h3 className="text-[10px] font-black text-slate-400 mb-8 uppercase tracking-widest italic text-center">Ranking de Mercado por UF</h3>
-            <div className="overflow-y-auto max-h-[1000px] pr-2">
-              <div style={{ height: `${Math.max(600, estatisticasEstado.length * 45)}px` }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart layout="vertical" data={estatisticasEstado} margin={{ left: 10, right: 120 }}>
-                    <CartesianGrid horizontal={true} vertical={false} stroke="#f1f5f9" />
+            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+              <h3 className="text-[10px] font-black text-slate-400 mb-6 uppercase italic">Ranking UF</h3>
+              <div className="overflow-y-auto max-h-[600px] pr-2">
+                <ResponsiveContainer width="100%" height={estatisticasEstado.length * 40}>
+                  <BarChart layout="vertical" data={estatisticasEstado}>
                     <XAxis type="number" hide />
-                    <YAxis dataKey="nomeCompleto" type="category" width={180} tick={{ fontSize: 13, fontWeight: 900, fill: '#1e3a8a', textAnchor: 'start' }} dx={-175} axisLine={false} tickLine={false} />
-                    <Tooltip cursor={{ fill: '#f8fafc' }} />
-                    <Bar dataKey="vendas" radius={[0, 15, 15, 0]} barSize={30}>
-                      <LabelList dataKey="vendas" position="right" formatter={(v: number) => `${(v/1e6).toPrecision(3)}M m³`} style={{ fill: '#1e293b', fontSize: '13px', fontWeight: '900' }} offset={12} />
-                      {estatisticasEstado.map((entry, index) => {
-                         const volumes = estatisticasEstado.map(d => d.vendas);
-                         const scale = scaleQuantile<string>().domain(volumes.length > 1 ? volumes : [0, 100]).range(["#dbeafe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e3a8a"]);
-                         return <Cell key={index} fill={scale(entry.vendas)} />;
-                      })}
+                    <YAxis dataKey="id" type="category" width={30} tick={{fontSize: 12, fontWeight: 900}} axisLine={false} tickLine={false} />
+                    <Bar dataKey="vendas" radius={[0, 10, 10, 0]} barSize={20}>
+                      {estatisticasEstado.map((e, i) => <Cell key={i} fill="#3b82f6" />)}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -302,7 +193,75 @@ export default function DashboardVendas() {
             </div>
           </div>
 
+          {/* MAPA AMPLIADO (8 colunas) */}
+          <div className="xl:col-span-8 bg-white p-6 rounded-[3rem] border border-slate-200 shadow-sm flex items-center justify-center min-h-[750px]">
+            <ComposableMap projection="geoMercator" projectionConfig={{ scale: mapConfigs[regiaoSelecionada]?.scale || 1100, center: mapConfigs[regiaoSelecionada]?.center || [-55, -15] }}>
+              <Geographies geography={geoUrl}>
+                {({ geographies }: any) => geographies.map((geo: any) => {
+                  const sigla = geo.properties.sigla;
+                  const data = estatisticasEstado.find(s => s.id === sigla);
+                  const pertence = regiaoSelecionada === 'Brasil Inteiro' || dados.find(d => d.UF === sigla)?.['Região Geográfica'] === regiaoSelecionada;
+                  const volumes = estatisticasEstado.map(d => d.vendas);
+                  const scale = scaleQuantile<string>().domain(volumes.length > 1 ? volumes : [0, 100]).range(["#dbeafe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e3a8a"]);
+                  return <Geography key={geo.rsmKey} geography={geo} fill={pertence ? (data ? scale(data.vendas) : "#f1f5f9") : "#f8fafc"} stroke="#ffffff" strokeWidth={0.5} />;
+                })}
+              </Geographies>
+              {estatisticasEstado.map((estado) => {
+                const coords = centrosEstados[estado.id];
+                if (!coords || estado.share < 0.6) return null;
+                return (
+                  <Marker key={estado.id} coordinates={coords}>
+                    <text textAnchor="middle" y={2} style={{ fontSize: "14px", fontWeight: 900, fill: "#1e3a8a", paintOrder: "stroke", stroke: "#ffffff", strokeWidth: "3px" }}>{estado.share.toFixed(1)}%</text>
+                  </Marker>
+                );
+              })}
+            </ComposableMap>
+          </div>
         </div>
+
+        {/* NOVO GRÁFICO: SAZONALIDADE MENSAL POR PRODUTO */}
+        <section className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
+          <div className="mb-8 flex justify-between items-end">
+            <div>
+              <h3 className="text-xl font-black text-blue-900 tracking-tighter italic uppercase">Sazonalidade Mensal</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest italic">Volumes por tipo de combustível (m³)</p>
+            </div>
+            <div className="flex gap-4">
+              {Object.entries(CORES_PRODUTOS).map(([name, color]) => (
+                <div key={name} className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full" style={{backgroundColor: color}} />
+                  <span className="text-[9px] font-black text-slate-500 uppercase italic">{name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          <div className="h-[450px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dadosMensais} margin={{ top: 30, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 900, fill: '#64748b'}} />
+                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 700, fill: '#94a3b8'}} tickFormatter={(v) => `${(v/1e6).toFixed(1)}M`} />
+                <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 10px 15px rgba(0,0,0,0.1)'}} />
+                
+                {listaProdutos.map((prod, idx) => (
+                  <Bar key={prod} dataKey={prod} stackId="a" fill={CORES_PRODUTOS[prod] || '#94a3b8'} radius={idx === listaProdutos.length - 1 ? [6, 6, 0, 0] : [0,0,0,0]}>
+                    <LabelList dataKey={prod} position="center" content={(props: any) => {
+                      const { x, y, width, height, value } = props;
+                      if (height < 20) return null; // Não mostra se a fatia for muito pequena
+                      return <text x={x + width/2} y={y + height/2} fill="#fff" textAnchor="middle" fontSize="9" fontWeight="900">{(value/1e3).toFixed(0)}k</text>;
+                    }} />
+                  </Bar>
+                ))}
+                {/* Rótulo do Total acima da barra */}
+                <Bar dataKey="total" stackId="total" fill="transparent">
+                  <LabelList dataKey="total" position="top" formatter={(v: number) => `${(v/1e6).toFixed(2)}M`} style={{fontSize: '11px', fontWeight: '900', fill: '#1e3a8a'}} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+
       </div>
     </main>
   );
