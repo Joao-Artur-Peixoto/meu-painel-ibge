@@ -7,13 +7,17 @@ import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps
 // @ts-expect-error
 import { scaleQuantile } from 'd3-scale';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList, Legend
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList
 } from 'recharts';
 import { useSession, signIn } from "next-auth/react";
 
 const geoUrl = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson";
+
+// Definição estrita de cores para os produtos da base
 const CORES_PRODUTOS: Record<string, string> = {
-  'DIESEL': '#1e3a8a', 'GASOLINA': '#3b82f6', 'ETANOL': '#10b981', 'GLP': '#f59e0b', 'OUTROS': '#64748b'
+  'Óleo Diesel': '#1e3a8a',
+  'Gasolina C': '#3b82f6',
+  'Etanol Hidratado': '#10b981'
 };
 
 const mapConfigs: Record<string, { center: [number, number]; scale: number }> = {
@@ -35,10 +39,10 @@ const centrosEstados: Record<string, [number, number]> = {
   'SP': [-48.54, -22.19], 'SE': [-37.44, -10.57], 'TO': [-48.25, -10.17]
 };
 
-export default function DashboardEstrategicoVendas() {
+export default function DashboardCorrigido() {
   const { data: session, status } = useSession();
   const [dados, setDados] = useState<any[]>([]);
-  const [anoSelecionado, setAnoSelecionado] = useState<number | null>(null);
+  const [anoSelecionado, setAnoSelecionado] = useState<number>(2025);
   const [regiaoSelecionada, setRegiaoSelecionada] = useState<string>('Brasil Inteiro');
   const [produtosSelecionados, setProdutosSelecionados] = useState<string[]>([]);
   const [segmentosSelecionados, setSegmentosSelecionados] = useState<string[]>([]);
@@ -53,37 +57,45 @@ export default function DashboardEstrategicoVendas() {
     });
   }, []);
 
-  // --- LÓGICA DE FILTRAGEM E SHARE ---
   const { metricasAno, listaAnos, listaProdutos, listaRegioes, listaSegmentos, shareCalculado, dadosMensais, estatisticasEstado, totalFiltro } = useMemo(() => {
+    const filtrarBase = (base: any[]) => {
+      let f = base;
+      if (regiaoSelecionada !== 'Brasil Inteiro') f = f.filter(d => d['Região Geográfica'] === regiaoSelecionada);
+      if (produtosSelecionados.length > 0) f = f.filter(d => produtosSelecionados.includes(d.PRODUTO));
+      if (segmentosSelecionados.length > 0) f = f.filter(d => segmentosSelecionados.includes(d.SEGMENTO));
+      return f;
+    };
+
     const anosUnicos = [...new Set(dados.map(d => new Date(d.DATA).getFullYear()))].sort((a, b) => b - a).slice(0, 10);
-    const prods = [...new Set(dados.map(d => d.PRODUTO))].sort();
-    const regs = [...new Set(dados.map(d => d['Região Geográfica']))].filter(Boolean).sort();
-    const segs = [...new Set(dados.map(d => d.SEGMENTO))].filter(Boolean).sort();
+    const prodsBase = [...new Set(dados.map(d => d.PRODUTO))].sort();
+    const regsBase = [...new Set(dados.map(d => d['Região Geográfica']))].filter(Boolean).sort();
+    const segsBase = [...new Set(dados.map(d => d.SEGMENTO))].filter(Boolean).sort();
 
-    // Filtro Global
-    let f = dados.filter(d => new Date(d.DATA).getFullYear() === anoSelecionado);
-    if (regiaoSelecionada !== 'Brasil Inteiro') f = f.filter(d => d['Região Geográfica'] === regiaoSelecionada);
-    if (produtosSelecionados.length > 0) f = f.filter(d => produtosSelecionados.includes(d.PRODUTO));
-    if (segmentosSelecionados.length > 0) f = f.filter(d => segmentosSelecionados.includes(d.SEGMENTO));
-
-    const totalF = f.reduce((a, b) => a + b.VENDAS, 0);
-
-    // Crescimento YOY
+    // 1. Crescimento Anual Reativo aos Filtros
     const crescimentos = anosUnicos.map(ano => {
-      const vAtual = dados.filter(d => new Date(d.DATA).getFullYear() === ano && (regiaoSelecionada === 'Brasil Inteiro' || d['Região Geográfica'] === regiaoSelecionada)).reduce((a,b)=>a+b.VENDAS,0);
-      const vAnterior = dados.filter(d => new Date(d.DATA).getFullYear() === (ano-1) && (regiaoSelecionada === 'Brasil Inteiro' || d['Região Geográfica'] === regiaoSelecionada)).reduce((a,b)=>a+b.VENDAS,0);
+      const dadosAnoAtual = dados.filter(d => new Date(d.DATA).getFullYear() === ano);
+      const dadosAnoAnterior = dados.filter(d => new Date(d.DATA).getFullYear() === (ano - 1));
+      
+      const vAtual = filtrarBase(dadosAnoAtual).reduce((a, b) => a + b.VENDAS, 0);
+      const vAnterior = filtrarBase(dadosAnoAnterior).reduce((a, b) => a + b.VENDAS, 0);
+      
       return { ano, cresc: vAnterior > 0 ? ((vAtual - vAnterior) / vAnterior) * 100 : 0 };
     });
 
-    // Share Dinâmico
+    // 2. Base do Ano Selecionado Filtrada
+    const dadosAnoAtual = dados.filter(d => new Date(d.DATA).getFullYear() === anoSelecionado);
+    const baseFiltrada = filtrarBase(dadosAnoAtual);
+    const totalF = baseFiltrada.reduce((a, b) => a + b.VENDAS, 0);
+
+    // 3. Participação (Share)
     const getShare = (lista: string[], campo: string) => lista.reduce((acc: any, n) => {
-      const v = f.filter(d => d[campo] === n).reduce((a, b) => a + b.VENDAS, 0);
+      const v = baseFiltrada.filter(d => d[campo] === n).reduce((a, b) => a + b.VENDAS, 0);
       acc[n] = totalF > 0 ? (v / totalF) * 100 : 0;
       return acc;
     }, {});
 
-    // Ranking UF
-    const agrupadoUF = f.reduce((acc: any, curr) => {
+    // 4. Ranking UF (Barras Horizontais)
+    const agrupadoUF = baseFiltrada.reduce((acc: any, curr) => {
       if (!acc[curr.UF]) acc[curr.UF] = { total: 0, nome: curr['UNIDADE DA FEDERAÇÃO'] };
       acc[curr.UF].total += curr.VENDAS;
       return acc;
@@ -92,37 +104,36 @@ export default function DashboardEstrategicoVendas() {
       id: uf, vendas: agrupadoUF[uf].total, share: totalF > 0 ? (agrupadoUF[uf].total / totalF) * 100 : 0, nomeCompleto: agrupadoUF[uf].nome
     })).sort((a, b) => b.vendas - a.vendas);
 
-    // Gráfico Mensal Empilhado
+    // 5. Sazonalidade Mensal (Apenas produtos da base)
     const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     const dMensal = meses.map((nome, i) => {
-      const mesData = f.filter(d => new Date(d.DATA).getMonth() === i);
-      const totalMes = mesData.reduce((a, b) => a + b.VENDAS, 0);
+      const dadosMes = baseFiltrada.filter(d => new Date(d.DATA).getMonth() === i);
+      const totalMes = dadosMes.reduce((a, b) => a + b.VENDAS, 0);
       const entry: any = { name: nome, total: totalMes };
-      prods.forEach(p => {
-        entry[p] = mesData.filter(d => d.PRODUTO === p).reduce((a, b) => a + b.VENDAS, 0);
+      prodsBase.forEach(p => {
+        entry[p] = dadosMes.filter(d => d.PRODUTO === p).reduce((a, b) => a + b.VENDAS, 0);
       });
       return entry;
     });
 
     return { 
-      listaAnos: anosUnicos, metricasAno: crescimentos, listaProdutos: prods, listaRegioes: regs, listaSegmentos: segs,
-      shareCalculado: { regiao: getShare(['Brasil Inteiro', ...regs], 'Região Geográfica'), produto: getShare(prods, 'PRODUTO'), segmento: getShare(segs, 'SEGMENTO') },
+      listaAnos: anosUnicos, metricasAno: crescimentos, listaProdutos: prodsBase, listaRegioes: regsBase, listaSegmentos: segsBase,
+      shareCalculado: { regiao: getShare(['Brasil Inteiro', ...regsBase], 'Região Geográfica'), produto: getShare(prodsBase, 'PRODUTO'), segmento: getShare(segsBase, 'SEGMENTO') },
       dadosMensais: dMensal, estatisticasEstado: ranking, totalFiltro: totalF
     };
   }, [dados, anoSelecionado, regiaoSelecionada, produtosSelecionados, segmentosSelecionados]);
 
-  if (status === "loading") return <div className="min-h-screen flex items-center justify-center font-black animate-pulse text-blue-900 uppercase italic">Iniciando Dashboard...</div>;
-  if (!session) return <div className="min-h-screen flex items-center justify-center bg-slate-900"><button onClick={() => signIn('google')} className="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black">ENTRAR</button></div>;
+  if (status === "loading") return <div className="min-h-screen flex items-center justify-center font-black animate-pulse text-blue-900 uppercase">Carregando Dados...</div>;
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 md:p-8 text-slate-900 font-sans">
       <div className="max-w-[1700px] mx-auto">
         
-        {/* HEADER FILTROS (MANTIDO CONFORME ÚLTIMO PEDIDO) */}
+        {/* HEADER E FILTROS */}
         <header className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-200 mb-8">
           <div className="flex justify-between items-center mb-10">
             <h1 className="text-3xl font-black tracking-tighter text-blue-900 italic uppercase">ANP|INSIGHTS BI</h1>
-            <Link href="/projeções" className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase hover:bg-blue-600 transition-all shadow-lg">➔ Projeções</Link>
+            <Link href="/projeções" className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase hover:bg-blue-600 transition-all">➔ Projeções</Link>
           </div>
 
           <div className="space-y-12">
@@ -133,8 +144,8 @@ export default function DashboardEstrategicoVendas() {
                   const m = metricasAno.find(i => i.ano === ano);
                   return (
                     <div key={ano} className="flex flex-col gap-2 w-20">
-                      <button onClick={() => setAnoSelecionado(ano)} className={`w-full py-2 rounded-lg text-xs font-black ${anoSelecionado === ano ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400'}`}>{ano}</button>
-                      <div className={`w-full py-1.5 rounded-lg text-[10px] font-black text-center border ${m && m.cresc >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{m?.cresc.toFixed(1)}%</div>
+                      <button onClick={() => setAnoSelecionado(ano)} className={`w-full py-2 rounded-lg text-xs font-black transition-all ${anoSelecionado === ano ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-slate-100 text-slate-400'}`}>{ano}</button>
+                      <div className={`w-full py-1.5 rounded-lg text-[10px] font-black text-center border ${m && m.cresc >= 0 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-600 border-red-100'}`}>{m?.cresc.toFixed(1)}%</div>
                     </div>
                   );
                 })}
@@ -151,12 +162,12 @@ export default function DashboardEstrategicoVendas() {
                   <div className="flex gap-2 flex-wrap">
                     {bloco.list.map(item => {
                       const isSel = bloco.multi ? (bloco.state as string[]).includes(item) : bloco.state === item;
-                      const share = bloco.key === 'regiao' && item === 'Brasil Inteiro' ? 100 : (shareCalculado as any)[bloco.key][item];
+                      const share = (shareCalculado as any)[bloco.key][item];
                       return (
                         <div key={item} className="flex flex-col gap-2 w-[85px]">
                           <button onClick={() => bloco.multi ? (bloco.set as any)(prev => prev.includes(item) ? prev.filter(i=>i!==item) : [...prev, item]) : (bloco.set as any)(item)} 
-                            className={`w-full h-10 px-1 rounded-lg text-[10px] font-black border leading-tight ${isSel ? 'bg-blue-50 border-blue-600 text-blue-700' : 'bg-white border-slate-200 text-slate-400'}`}>{item}</button>
-                          <div className={`w-full py-1.5 rounded-lg text-[10px] font-black text-center border border-transparent ${share > 20 ? 'bg-blue-600 text-white' : share > 0 ? 'bg-blue-100 text-blue-600' : 'text-slate-200'}`}>{share?.toFixed(1)}%</div>
+                            className={`w-full h-10 px-1 rounded-lg text-[10px] font-black border leading-tight transition-all ${isSel ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-400'}`}>{item}</button>
+                          <div className={`w-full py-1.5 rounded-lg text-[10px] font-black text-center border border-transparent ${share > 0 ? 'bg-blue-50 text-blue-600' : 'text-slate-200'}`}>{share?.toFixed(1)}%</div>
                         </div>
                       );
                     })}
@@ -167,25 +178,25 @@ export default function DashboardEstrategicoVendas() {
           </div>
         </header>
 
-        {/* CORPO PRINCIPAL: RANKING (ESQ) E MAPA (DIR - MAIOR) */}
+        {/* MAPA E RANKING */}
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start mb-8">
           
-          {/* RANKING + TOTALIZADOR (4 colunas) */}
+          {/* TOTALIZADOR + RANKING (COLUNA ESQUERDA) */}
           <div className="xl:col-span-4 space-y-6">
             <div className="bg-blue-600 p-8 rounded-[2.5rem] shadow-xl text-white relative overflow-hidden">
-              <h4 className="text-blue-100 text-[10px] font-black uppercase tracking-widest mb-1 italic">Total no Ano</h4>
+              <h4 className="text-blue-100 text-[10px] font-black uppercase tracking-widest mb-1 italic">Venda Total ({anoSelecionado})</h4>
               <div className="text-5xl font-black tracking-tighter relative z-10">{totalFiltro.toLocaleString('pt-BR')} <span className="text-xl opacity-60">m³</span></div>
             </div>
 
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
               <h3 className="text-[10px] font-black text-slate-400 mb-6 uppercase italic">Ranking UF</h3>
-              <div className="overflow-y-auto max-h-[600px] pr-2">
-                <ResponsiveContainer width="100%" height={estatisticasEstado.length * 40}>
-                  <BarChart layout="vertical" data={estatisticasEstado}>
+              <div className="overflow-y-auto max-h-[500px] pr-2">
+                <ResponsiveContainer width="100%" height={estatisticasEstado.length * 35}>
+                  <BarChart layout="vertical" data={estatisticasEstado} margin={{ left: -30 }}>
                     <XAxis type="number" hide />
-                    <YAxis dataKey="id" type="category" width={30} tick={{fontSize: 12, fontWeight: 900}} axisLine={false} tickLine={false} />
-                    <Bar dataKey="vendas" radius={[0, 10, 10, 0]} barSize={20}>
-                      {estatisticasEstado.map((e, i) => <Cell key={i} fill="#3b82f6" />)}
+                    <YAxis dataKey="id" type="category" width={40} tick={{fontSize: 12, fontWeight: 900, fill: '#1e3a8a'}} axisLine={false} tickLine={false} />
+                    <Bar dataKey="vendas" radius={[0, 10, 10, 0]} barSize={18} fill="#3b82f6">
+                       <LabelList dataKey="vendas" position="right" formatter={(v: any) => `${(v/1e6).toFixed(1)}M`} style={{fontSize: '10px', fontWeight: '900', fill: '#64748b'}} offset={10} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -193,8 +204,8 @@ export default function DashboardEstrategicoVendas() {
             </div>
           </div>
 
-          {/* MAPA AMPLIADO (8 colunas) */}
-          <div className="xl:col-span-8 bg-white p-6 rounded-[3rem] border border-slate-200 shadow-sm flex items-center justify-center min-h-[750px]">
+          {/* MAPA (COLUNA DIREITA - MAIOR) */}
+          <div className="xl:col-span-8 bg-white p-6 rounded-[3rem] border border-slate-200 shadow-sm flex items-center justify-center min-h-[700px]">
             <ComposableMap projection="geoMercator" projectionConfig={{ scale: mapConfigs[regiaoSelecionada]?.scale || 1100, center: mapConfigs[regiaoSelecionada]?.center || [-55, -15] }}>
               <Geographies geography={geoUrl}>
                 {({ geographies }: any) => geographies.map((geo: any) => {
@@ -202,8 +213,8 @@ export default function DashboardEstrategicoVendas() {
                   const data = estatisticasEstado.find(s => s.id === sigla);
                   const pertence = regiaoSelecionada === 'Brasil Inteiro' || dados.find(d => d.UF === sigla)?.['Região Geográfica'] === regiaoSelecionada;
                   const volumes = estatisticasEstado.map(d => d.vendas);
-                  const scale = scaleQuantile<string>().domain(volumes.length > 1 ? volumes : [0, 100]).range(["#dbeafe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e3a8a"]);
-                  return <Geography key={geo.rsmKey} geography={geo} fill={pertence ? (data ? scale(data.vendas) : "#f1f5f9") : "#f8fafc"} stroke="#ffffff" strokeWidth={0.5} />;
+                  const scale = scaleQuantile<string>().domain(volumes.length > 1 ? volumes : [0, 1e9]).range(["#dbeafe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e3a8a"]);
+                  return <Geography key={geo.rsmKey} geography={geo} fill={pertence ? (data ? scale(data.vendas) : "#f8fafc") : "#f1f5f9"} stroke="#ffffff" strokeWidth={0.5} />;
                 })}
               </Geographies>
               {estatisticasEstado.map((estado) => {
@@ -211,7 +222,7 @@ export default function DashboardEstrategicoVendas() {
                 if (!coords || estado.share < 0.6) return null;
                 return (
                   <Marker key={estado.id} coordinates={coords}>
-                    <text textAnchor="middle" y={2} style={{ fontSize: "14px", fontWeight: 900, fill: "#1e3a8a", paintOrder: "stroke", stroke: "#ffffff", strokeWidth: "3px" }}>{estado.share.toFixed(1)}%</text>
+                    <text textAnchor="middle" y={2} style={{ fontSize: "12px", fontWeight: 900, fill: "#1e3a8a", paintOrder: "stroke", stroke: "#ffffff", strokeWidth: "3px" }}>{estado.share.toFixed(1)}%</text>
                   </Marker>
                 );
               })}
@@ -219,18 +230,18 @@ export default function DashboardEstrategicoVendas() {
           </div>
         </div>
 
-        {/* NOVO GRÁFICO: SAZONALIDADE MENSAL POR PRODUTO */}
+        {/* SAZONALIDADE MENSAL CORRIGIDA */}
         <section className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
           <div className="mb-8 flex justify-between items-end">
             <div>
-              <h3 className="text-xl font-black text-blue-900 tracking-tighter italic uppercase">Sazonalidade Mensal</h3>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest italic">Volumes por tipo de combustível (m³)</p>
+              <h3 className="text-xl font-black text-blue-900 tracking-tighter italic uppercase">Sazonalidade Mensal ({anoSelecionado})</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase italic">Volume mensal por tipo de combustível (m³)</p>
             </div>
             <div className="flex gap-4">
-              {Object.entries(CORES_PRODUTOS).map(([name, color]) => (
-                <div key={name} className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full" style={{backgroundColor: color}} />
-                  <span className="text-[9px] font-black text-slate-500 uppercase italic">{name}</span>
+              {Object.keys(CORES_PRODUTOS).map(name => (
+                <div key={name} className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{backgroundColor: CORES_PRODUTOS[name]}} />
+                  <span className="text-[10px] font-black text-slate-600 uppercase">{name}</span>
                 </div>
               ))}
             </div>
@@ -238,24 +249,24 @@ export default function DashboardEstrategicoVendas() {
           
           <div className="h-[450px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dadosMensais} margin={{ top: 30, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <BarChart data={dadosMensais} margin={{ top: 20, right: 30, left: 20, bottom: 5 }} barGap={0} barCategoryGap="20%">
+                <CartesianGrid vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 12, fontWeight: 900, fill: '#64748b'}} />
-                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: 700, fill: '#94a3b8'}} tickFormatter={(v) => `${(v/1e6).toFixed(1)}M`} />
-                <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '20px', border: 'none', boxShadow: '0 10px 15px rgba(0,0,0,0.1)'}} />
+                <YAxis hide />
+                <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '15px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
                 
-                {listaProdutos.map((prod, idx) => (
-                  <Bar key={prod} dataKey={prod} stackId="a" fill={CORES_PRODUTOS[prod] || '#94a3b8'} radius={idx === listaProdutos.length - 1 ? [6, 6, 0, 0] : [0,0,0,0]}>
-                    <LabelList dataKey={prod} position="center" content={(props: any) => {
-                      const { x, y, width, height, value } = props;
-                      if (height < 20) return null; // Não mostra se a fatia for muito pequena
-                      return <text x={x + width/2} y={y + height/2} fill="#fff" textAnchor="middle" fontSize="9" fontWeight="900">{(value/1e3).toFixed(0)}k</text>;
-                    }} />
+                {Object.keys(CORES_PRODUTOS).map((prod, idx) => (
+                  <Bar key={prod} dataKey={prod} stackId="a" fill={CORES_PRODUTOS[prod]} radius={idx === 2 ? [5, 5, 0, 0] : [0,0,0,0]}>
+                     <LabelList dataKey={prod} position="center" content={(props: any) => {
+                       const { x, y, width, height, value } = props;
+                       if (height < 25) return null;
+                       return <text x={x + width/2} y={y + height/2} fill="#fff" textAnchor="middle" fontSize="10" fontWeight="900">{(value/1e3).toFixed(0)}k</text>;
+                     }} />
                   </Bar>
                 ))}
-                {/* Rótulo do Total acima da barra */}
+                
                 <Bar dataKey="total" stackId="total" fill="transparent">
-                  <LabelList dataKey="total" position="top" formatter={(v: number) => `${(v/1e6).toFixed(2)}M`} style={{fontSize: '11px', fontWeight: '900', fill: '#1e3a8a'}} />
+                  <LabelList dataKey="total" position="top" formatter={(v: number) => `${(v/1e6).toFixed(2)}M`} style={{fontSize: '12px', fontWeight: '900', fill: '#1e3a8a'}} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
